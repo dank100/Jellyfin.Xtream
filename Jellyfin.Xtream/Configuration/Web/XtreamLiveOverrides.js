@@ -39,6 +39,18 @@ export default function (view) {
     td.appendChild(image);
     tr.appendChild(td);
 
+    td = document.createElement('td');
+    const epgTz = document.createElement('input');
+    epgTz.type = 'text';
+    epgTz.setAttribute('is', 'emby-input');
+    epgTz.placeholder = 'UTC';
+    epgTz.value = overrides.EpgTimezone ?? '';
+    epgTz.onchange = () => epgTz.value ?
+      overrides.EpgTimezone = epgTz.value :
+      delete overrides.EpgTimezone;
+    td.appendChild(epgTz);
+    tr.appendChild(td);
+
     return tr;
   };
 

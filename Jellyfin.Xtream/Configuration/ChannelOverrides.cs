@@ -34,4 +34,9 @@ public class ChannelOverrides
     /// Gets or sets the url of the channel logo.
     /// </summary>
     public string? LogoUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets the IANA timezone of the EPG data for this channel (e.g. "Europe/London").
+    /// </summary>
+    public string? EpgTimezone { get; set; }
 }

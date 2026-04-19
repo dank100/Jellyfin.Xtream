@@ -83,5 +83,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the channel override configuration for Live TV.
     /// </summary>
     public SerializableDictionary<int, ChannelOverrides> LiveTvOverrides { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the IANA timezone for the user (e.g. "Europe/Copenhagen"). Defaults to server local time.
+    /// </summary>
+    public string MyTimezone { get; set; } = string.Empty;
 }
 #pragma warning restore CA2227

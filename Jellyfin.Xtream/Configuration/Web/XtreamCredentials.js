@@ -14,6 +14,7 @@ export default function (view) {
       view.querySelector('#Username').value = config.Username;
       view.querySelector('#Password').value = config.Password;
       view.querySelector('#UserAgent').value = config.UserAgent;
+      view.querySelector('#MyTimezone').value = config.MyTimezone;
       Dashboard.hideLoadingMsg();
     });
 
@@ -59,6 +60,7 @@ export default function (view) {
         config.Username = view.querySelector('#Username').value;
         config.Password = view.querySelector('#Password').value;
         config.UserAgent = view.querySelector('#UserAgent').value;
+        config.MyTimezone = view.querySelector('#MyTimezone').value;
         ApiClient.updatePluginConfiguration(pluginId, config).then((result) => {
           reloadStatus();
           Dashboard.processPluginConfigurationUpdateResult(result);

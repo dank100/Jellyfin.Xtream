@@ -22,6 +22,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Client.Models;
+using Jellyfin.Xtream.Configuration;
 using Jellyfin.Xtream.Service;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
@@ -45,6 +46,9 @@ namespace Jellyfin.Xtream;
 /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
 public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger<LiveTvService> logger, IMemoryCache memoryCache, IXtreamClient xtreamClient) : ILiveTvService, ISupportsDirectStreamProvider
 {
+    private readonly Dictionary<string, TimerInfo> _timers = new();
+    private readonly Dictionary<string, SeriesTimerInfo> _seriesTimers = new();
+
     /// <inheritdoc />
     public string Name => "Xtream Live";
 
@@ -75,49 +79,67 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <inheritdoc />
     public Task CancelTimerAsync(string timerId, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        _timers.Remove(timerId);
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task CreateTimerAsync(TimerInfo info, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        if (string.IsNullOrEmpty(info.Id))
+        {
+            info.Id = Guid.NewGuid().ToString("N");
+        }
+
+        _timers[info.Id] = info;
+        logger.LogInformation("Timer created: {TimerId} for channel {ChannelId}", info.Id, info.ChannelId);
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task<IEnumerable<TimerInfo>> GetTimersAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult<IEnumerable<TimerInfo>>(new List<TimerInfo>());
+        return Task.FromResult<IEnumerable<TimerInfo>>(_timers.Values.ToList());
     }
 
     /// <inheritdoc />
     public Task<IEnumerable<SeriesTimerInfo>> GetSeriesTimersAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult<IEnumerable<SeriesTimerInfo>>(new List<SeriesTimerInfo>());
+        return Task.FromResult<IEnumerable<SeriesTimerInfo>>(_seriesTimers.Values.ToList());
     }
 
     /// <inheritdoc />
     public Task CreateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        if (string.IsNullOrEmpty(info.Id))
+        {
+            info.Id = Guid.NewGuid().ToString("N");
+        }
+
+        _seriesTimers[info.Id] = info;
+        logger.LogInformation("Series timer created: {TimerId}", info.Id);
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task UpdateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        _seriesTimers[info.Id] = info;
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task UpdateTimerAsync(TimerInfo updatedTimer, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        _timers[updatedTimer.Id] = updatedTimer;
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task CancelSeriesTimerAsync(string timerId, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        _seriesTimers.Remove(timerId);
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -174,6 +196,8 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             items = new List<ProgramInfo>();
             Plugin plugin = Plugin.Instance;
             {
+                plugin.Configuration.LiveTvOverrides.TryGetValue(streamId, out ChannelOverrides? overrides);
+                TimeSpan epgShift = GetEpgShift(overrides?.EpgTimezone, plugin.Configuration.MyTimezone);
                 EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, streamId, cancellationToken).ConfigureAwait(false);
                 foreach (EpgInfo epg in epgs.Listings)
                 {
@@ -181,8 +205,8 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                     {
                         Id = StreamService.ToGuid(StreamService.EpgPrefix, streamId, epg.Id, 0).ToString(),
                         ChannelId = channelId,
-                        StartDate = epg.Start,
-                        EndDate = epg.End,
+                        StartDate = epg.Start + epgShift,
+                        EndDate = epg.End + epgShift,
                         Name = epg.Title,
                         Overview = epg.Description,
                     });
@@ -200,7 +224,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <inheritdoc />
     public Task ResetTuner(string id, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -225,5 +249,24 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
         stream.ConsumerCount++;
         return stream;
+    }
+
+    /// <summary>
+    /// Computes the time shift between an EPG source timezone and the user's timezone.
+    /// </summary>
+    /// <param name="epgTimezone">IANA timezone of the EPG data (e.g. "Europe/London"). Null or empty means UTC.</param>
+    /// <param name="myTimezone">IANA timezone of the user (e.g. "Europe/Copenhagen"). Null or empty means server local.</param>
+    /// <returns>The TimeSpan to add to EPG times.</returns>
+    internal static TimeSpan GetEpgShift(string? epgTimezone, string? myTimezone)
+    {
+        TimeZoneInfo epgTz = string.IsNullOrEmpty(epgTimezone)
+            ? TimeZoneInfo.Utc
+            : TimeZoneInfo.FindSystemTimeZoneById(epgTimezone);
+        TimeZoneInfo myTz = string.IsNullOrEmpty(myTimezone)
+            ? TimeZoneInfo.Local
+            : TimeZoneInfo.FindSystemTimeZoneById(myTimezone);
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        return myTz.GetUtcOffset(now) - epgTz.GetUtcOffset(now);
     }
 }

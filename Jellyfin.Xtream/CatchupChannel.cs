@@ -21,6 +21,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Client.Models;
+using Jellyfin.Xtream.Configuration;
 using Jellyfin.Xtream.Service;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Providers;
@@ -215,9 +216,13 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
 
         foreach (EpgInfo epg in epgs.Listings.Where(epg => epg.Start <= end && epg.End >= start))
         {
+            plugin.Configuration.LiveTvOverrides.TryGetValue(channelId, out ChannelOverrides? overrides);
+            TimeSpan epgShift = LiveTvService.GetEpgShift(overrides?.EpgTimezone, plugin.Configuration.MyTimezone);
+            DateTime shiftedStart = epg.Start + epgShift;
+            DateTime shiftedEnd = epg.End + epgShift;
             ParsedName parsedName = StreamService.ParseName(epg.Title);
-            int durationMinutes = (int)Math.Ceiling((epg.End - epg.Start).TotalMinutes);
-            string dateTitle = epg.Start.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
+            int durationMinutes = (int)Math.Ceiling((shiftedEnd - shiftedStart).TotalMinutes);
+            string dateTitle = shiftedStart.ToString("HH:mm", CultureInfo.InvariantCulture);
             List<MediaSourceInfo> sources = [
                 plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: epg.StartLocalTime, durationMinutes: durationMinutes)
             ];
@@ -225,14 +230,14 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
             items.Add(new()
             {
                 ContentType = ChannelMediaContentType.TvExtra,
-                DateCreated = epg.Start,
+                DateCreated = shiftedStart,
                 Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channel.StreamId, epg.Id, day).ToString(),
                 IsLiveStream = false,
                 MediaSources = sources,
                 MediaType = ChannelMediaType.Video,
                 Name = $"{dateTitle} - {parsedName.Title}",
                 Overview = epg.Description,
-                PremiereDate = epg.Start,
+                PremiereDate = shiftedStart,
                 RunTimeTicks = durationMinutes * TimeSpan.TicksPerMinute,
                 Tags = new List<string>(parsedName.Tags),
                 Type = ChannelItemType.Media,
