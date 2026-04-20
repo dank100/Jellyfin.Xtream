@@ -214,10 +214,11 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
             };
         }
 
-        foreach (EpgInfo epg in epgs.Listings.Where(epg => epg.Start <= end && epg.End >= start))
+        plugin.Configuration.LiveTvOverrides.TryGetValue(channelId, out ChannelOverrides? overrides);
+        TimeSpan epgShift = LiveTvService.GetEpgShift(overrides?.EpgTimezone, plugin.Configuration.MyTimezone);
+
+        foreach (EpgInfo epg in epgs.Listings.Where(epg => (epg.End + epgShift) >= start && (epg.Start + epgShift) <= end))
         {
-            plugin.Configuration.LiveTvOverrides.TryGetValue(channelId, out ChannelOverrides? overrides);
-            TimeSpan epgShift = LiveTvService.GetEpgShift(overrides?.EpgTimezone, plugin.Configuration.MyTimezone);
             DateTime shiftedStart = epg.Start + epgShift;
             DateTime shiftedEnd = epg.End + epgShift;
             ParsedName parsedName = StreamService.ParseName(epg.Title);
