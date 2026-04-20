@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using System.Collections.Generic;
+using System.Linq;
 using MediaBrowser.Model.Plugins;
 
 #pragma warning disable CA2227
@@ -88,5 +89,17 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the IANA timezone for the user (e.g. "Europe/Copenhagen"). Defaults to server local time.
     /// </summary>
     public string MyTimezone { get; set; } = string.Empty;
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        var hash = System.HashCode.Combine(BaseUrl, Username, MyTimezone, IsCatchupVisible, IsSeriesVisible, IsVodVisible);
+        foreach (var kvp in LiveTvOverrides.OrderBy(k => k.Key))
+        {
+            hash = System.HashCode.Combine(hash, kvp.Key, kvp.Value.EpgTimezone);
+        }
+
+        return hash;
+    }
 }
 #pragma warning restore CA2227
