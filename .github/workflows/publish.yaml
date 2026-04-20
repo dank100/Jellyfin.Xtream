@@ -43,3 +43,5 @@ jobs:
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
+          pagesBranch: manifest
+          pagesFile: manifest.json
