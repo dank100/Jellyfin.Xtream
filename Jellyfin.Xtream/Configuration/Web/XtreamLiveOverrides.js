@@ -1,5 +1,5 @@
 export default function (view) {
-  const createChannelRow = (channel, overrides, epgSources) => {
+  const createChannelRow = (channel, overrides, epgSources, Xtream) => {
     const tr = document.createElement('tr');
     tr.dataset['channelId'] = channel.Id;
 
@@ -13,6 +13,10 @@ export default function (view) {
       overrides.Number = parseInt(number.value) :
       delete overrides.Number;
     td.appendChild(number);
+    const numLabel = document.createElement('span');
+    numLabel.className = 'xtream-ch-label';
+    numLabel.textContent = channel.Number;
+    td.appendChild(numLabel);
     tr.appendChild(td);
 
     td = document.createElement('td');
@@ -25,6 +29,10 @@ export default function (view) {
       overrides.Name = name.value :
       delete overrides.Name;
     td.appendChild(name);
+    const nameLabel = document.createElement('span');
+    nameLabel.className = 'xtream-ch-label';
+    nameLabel.textContent = channel.Name;
+    td.appendChild(nameLabel);
     tr.appendChild(td);
 
     td = document.createElement('td');
@@ -79,9 +87,13 @@ export default function (view) {
     emptyOpt.textContent = '-- Select --';
     xmltvChId.appendChild(emptyOpt);
     xmltvChId.value = overrides.XmltvChannelId ?? '';
-    xmltvChId.onchange = () => xmltvChId.value ?
-      overrides.XmltvChannelId = xmltvChId.value :
-      delete overrides.XmltvChannelId;
+    xmltvChId.addEventListener('change', () => {
+      if (xmltvChId.value) {
+        overrides.XmltvChannelId = xmltvChId.value;
+      } else {
+        delete overrides.XmltvChannelId;
+      }
+    });
     td.appendChild(xmltvChId);
     tr.appendChild(td);
 
@@ -97,8 +109,19 @@ export default function (view) {
           opt.textContent = `${ch.DisplayName} (${ch.Id})`;
           xmltvChId.appendChild(opt);
         });
-        xmltvChId.value = overrides.XmltvChannelId ?? '';
-      }).catch(() => {});
+        const savedValue = overrides.XmltvChannelId ?? '';
+        xmltvChId.value = savedValue;
+        if (xmltvChId.value !== savedValue) {
+          // Value not found in dropdown, add it manually
+          if (savedValue) {
+            const opt = document.createElement('option');
+            opt.value = savedValue;
+            opt.textContent = savedValue;
+            xmltvChId.appendChild(opt);
+            xmltvChId.value = savedValue;
+          }
+        }
+      }).catch((err) => { console.error('Failed to load XMLTV channels', err); });
     };
     epgSource.addEventListener('change', () => loadXmltvChannels(epgSource.value));
     // Load initial channels if source is already set
@@ -127,7 +150,7 @@ export default function (view) {
       const epgSources = config.EpgSources || [];
       for (const channel of channels) {
         data[channel.Id] ??= {};
-        const row = createChannelRow(channel, data[channel.Id], epgSources);
+        const row = createChannelRow(channel, data[channel.Id], epgSources, Xtream);
         table.appendChild(row);
       }
       Dashboard.hideLoadingMsg();

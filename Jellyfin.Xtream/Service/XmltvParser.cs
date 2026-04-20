@@ -180,6 +180,7 @@ public class XmltvParser
                 using var handler = new HttpClientHandler
                 {
                     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+                    CheckCertificateRevocationList = true,
                 };
                 using var client = new HttpClient(handler);
                 stream = await client.GetStreamAsync(uri, cancellationToken).ConfigureAwait(false);
