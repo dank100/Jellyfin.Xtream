@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -186,9 +187,17 @@ public class XmltvParser
 
             await using (stream.ConfigureAwait(false))
             {
-                var doc = await XDocument.LoadAsync(stream, LoadOptions.None, cancellationToken).ConfigureAwait(false);
-                _memoryCache.Set(cacheKey, doc, DateTimeOffset.Now.Add(CacheDuration));
-                return doc;
+                // Decompress gzip if the URL ends with .gz
+                Stream xmlStream = source.Url.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)
+                    ? new GZipStream(stream, CompressionMode.Decompress)
+                    : stream;
+
+                await using (xmlStream.ConfigureAwait(false))
+                {
+                    var doc = await XDocument.LoadAsync(xmlStream, LoadOptions.None, cancellationToken).ConfigureAwait(false);
+                    _memoryCache.Set(cacheKey, doc, DateTimeOffset.Now.Add(CacheDuration));
+                    return doc;
+                }
             }
         }
         catch (Exception ex)
