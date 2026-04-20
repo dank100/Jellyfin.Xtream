@@ -8,12 +8,12 @@
     "owner": "Kevinjil",
     "versions": [
       {
-        "changelog": "## Changes\n- External XMLTV EPG source support with per-channel mapping\n- EPG Sources management UI\n- XMLTV Channel ID dropdown with async population\n- Improved overrides page styling and readability\n- Fix XmltvChannelId persistence\n- SSL and gzip support for XMLTV fetches",
-        "checksum": "16826c44e0b40925743498d35b2dfba7",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.3/jellyfin-xtream_0.9.3.0.zip",
+        "changelog": "## Changes\n- Searchable XMLTV channel input with datalist autocomplete\n- Auto-match XMLTV channels by name similarity\n- External XMLTV EPG source support with per-channel mapping\n- EPG Sources management UI\n- Improved overrides page styling and readability\n- Fix XmltvChannelId persistence\n- SSL and gzip support for XMLTV fetches",
+        "checksum": "91c8c5d12544a7a052ad156b468e9902",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.4/jellyfin-xtream_0.9.4.0.zip",
         "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-20T18:46:27Z",
-        "version": "0.9.3.0"
+        "timestamp": "2026-04-20T19:13:13Z",
+        "version": "0.9.4.0"
       },
       {
         "changelog": "- Recordings now use ffmpeg MKV remux for seekable in-progress recordings\n- Fix catchup channel timezone display\n- Fix catchup date filter with timezone shift\n- Cache invalidation on timezone config change\n- Recording engine, timer persistence, active recordings UI\n- Per-channel EPG timezone support",
