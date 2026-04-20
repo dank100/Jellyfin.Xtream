@@ -237,7 +237,12 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             throw new ArgumentException("Unsupported channel");
         }
 
-        string key = $"xtream-epg-{channelId}";
+        Plugin plugin = Plugin.Instance;
+        plugin.Configuration.LiveTvOverrides.TryGetValue(streamId, out ChannelOverrides? overrides);
+        string epgTz = overrides?.EpgTimezone ?? string.Empty;
+        string myTz = plugin.Configuration.MyTimezone ?? string.Empty;
+        string key = $"xtream-epg-{channelId}-{epgTz}-{myTz}";
+
         ICollection<ProgramInfo>? items = null;
         if (memoryCache.TryGetValue(key, out ICollection<ProgramInfo>? o))
         {
@@ -246,10 +251,8 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         else
         {
             items = new List<ProgramInfo>();
-            Plugin plugin = Plugin.Instance;
             {
-                plugin.Configuration.LiveTvOverrides.TryGetValue(streamId, out ChannelOverrides? overrides);
-                TimeSpan epgShift = GetEpgShift(overrides?.EpgTimezone, plugin.Configuration.MyTimezone);
+                TimeSpan epgShift = GetEpgShift(epgTz, myTz);
                 EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, streamId, cancellationToken).ConfigureAwait(false);
                 foreach (EpgInfo epg in epgs.Listings)
                 {
