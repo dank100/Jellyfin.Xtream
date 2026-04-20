@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -250,7 +251,7 @@ public class RecordingEngine : IHostedService, IDisposable
     private async Task RecordStreamAsync(ActiveRecording recording)
     {
         var timer = recording.Timer;
-        string fileName = $"{timer.Name}_{timer.StartDate:yyyyMMdd_HHmmss}.ts"
+        string fileName = $"{timer.Name}_{timer.StartDate:yyyyMMdd_HHmmss}.mkv"
             .Replace(' ', '_')
             .Replace('/', '-')
             .Replace('\\', '-');
@@ -270,25 +271,63 @@ public class RecordingEngine : IHostedService, IDisposable
             StreamService.FromGuid(guid, out int _, out int streamId, out int _, out int _);
             string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{streamId}";
 
-            using var response = await _httpClientFactory.CreateClient(NamedClient.Default)
-                .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, recording.CancellationToken)
-                .ConfigureAwait(false);
-
-            response.EnsureSuccessStatusCode();
-
-            var stream = await response.Content.ReadAsStreamAsync(recording.CancellationToken).ConfigureAwait(false);
-            await using (stream.ConfigureAwait(false))
+            // Use ffmpeg to remux the stream to MKV for proper seek index support.
+            var ffmpegPath = GetFfmpegPath();
+            var psi = new ProcessStartInfo
             {
-                var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.Read, 81920);
-                await using (fileStream.ConfigureAwait(false))
+                FileName = ffmpegPath,
+                Arguments = $"-i \"{url}\" -c copy -f matroska -y \"{filePath}\"",
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+
+            if (!string.IsNullOrEmpty(config.UserAgent))
+            {
+                psi.Arguments = $"-user_agent \"{config.UserAgent}\" " + psi.Arguments;
+            }
+
+            _logger.LogInformation("Starting ffmpeg: {Args}", psi.Arguments);
+
+            using var process = Process.Start(psi)
+                ?? throw new InvalidOperationException("Failed to start ffmpeg process");
+
+            // When recording is cancelled, kill ffmpeg gracefully
+            recording.CancellationToken.Register(() =>
+            {
+                try
                 {
-                    var buffer = new byte[65536];
-                    int bytesRead;
-                    while ((bytesRead = await stream.ReadAsync(buffer, recording.CancellationToken).ConfigureAwait(false)) > 0)
+                    if (!process.HasExited)
                     {
-                        await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), recording.CancellationToken).ConfigureAwait(false);
+                        process.Kill(true);
                     }
                 }
+                catch (InvalidOperationException)
+                {
+                }
+            });
+
+            // Read stderr for logging (ffmpeg writes progress to stderr)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    string? line;
+                    while ((line = await process.StandardError.ReadLineAsync(recording.CancellationToken).ConfigureAwait(false)) != null)
+                    {
+                        _logger.LogDebug("ffmpeg: {Line}", line);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            await process.WaitForExitAsync(recording.CancellationToken).ConfigureAwait(false);
+
+            if (process.ExitCode != 0 && !recording.CancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("ffmpeg exited with code {Code}", process.ExitCode);
             }
         }
         catch (OperationCanceledException)
@@ -328,6 +367,19 @@ public class RecordingEngine : IHostedService, IDisposable
 
             recording.Dispose();
         }
+    }
+
+    private static string GetFfmpegPath()
+    {
+        // Jellyfin Docker images bundle ffmpeg here
+        string jellyfinFfmpeg = "/usr/lib/jellyfin-ffmpeg/ffmpeg";
+        if (File.Exists(jellyfinFfmpeg))
+        {
+            return jellyfinFfmpeg;
+        }
+
+        // Fall back to system ffmpeg
+        return "ffmpeg";
     }
 
     private void RegisterActiveRecording(string id, string path, TimerInfo timer, CancellationTokenSource cts)
