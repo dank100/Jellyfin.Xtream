@@ -177,7 +177,11 @@ public class XmltvParser
             Stream stream;
             if (Uri.TryCreate(source.Url, UriKind.Absolute, out var uri) && (uri.Scheme == "http" || uri.Scheme == "https"))
             {
-                var client = _httpClientFactory.CreateClient(NamedClient.Default);
+                using var handler = new HttpClientHandler
+                {
+                    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+                };
+                using var client = new HttpClient(handler);
                 stream = await client.GetStreamAsync(uri, cancellationToken).ConfigureAwait(false);
             }
             else
