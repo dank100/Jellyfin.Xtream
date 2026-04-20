@@ -21,6 +21,8 @@ using System.Threading.Tasks;
 using Jellyfin.Xtream.Api.Models;
 using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Client.Models;
+using Jellyfin.Xtream.Configuration;
+using Jellyfin.Xtream.Service;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -33,7 +35,7 @@ namespace Jellyfin.Xtream.Api;
 [ApiController]
 [Route("[controller]")]
 [Produces(MediaTypeNames.Application.Json)]
-public class XtreamController(IXtreamClient xtreamClient) : ControllerBase
+public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParser) : ControllerBase
 {
     private static CategoryResponse CreateCategoryResponse(Category category) =>
         new()
@@ -199,6 +201,26 @@ public class XtreamController(IXtreamClient xtreamClient) : ControllerBase
     {
         IEnumerable<StreamInfo> streams = await Plugin.Instance.StreamService.GetLiveStreams(cancellationToken).ConfigureAwait(false);
         var channels = streams.Select(CreateChannelResponse).ToList();
+        return Ok(channels);
+    }
+
+    /// <summary>
+    /// Get all channels from an XMLTV EPG source.
+    /// </summary>
+    /// <param name="sourceId">The EPG source ID.</param>
+    /// <param name="cancellationToken">The cancellation token for cancelling requests.</param>
+    /// <returns>An enumerable containing the XMLTV channels.</returns>
+    [Authorize(Policy = "RequiresElevation")]
+    [HttpGet("EpgChannels/{sourceId}")]
+    public async Task<ActionResult<IEnumerable<XmltvChannel>>> GetEpgChannels(string sourceId, CancellationToken cancellationToken)
+    {
+        EpgSource? source = Plugin.Instance.Configuration.EpgSources.FirstOrDefault(s => s.Id == sourceId);
+        if (source == null)
+        {
+            return NotFound();
+        }
+
+        var channels = await xmltvParser.GetChannelsAsync(source, cancellationToken).ConfigureAwait(false);
         return Ok(channels);
     }
 }

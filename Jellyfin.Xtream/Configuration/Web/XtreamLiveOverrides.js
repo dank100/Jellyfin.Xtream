@@ -72,16 +72,37 @@ export default function (view) {
     tr.appendChild(td);
 
     td = document.createElement('td');
-    const xmltvChId = document.createElement('input');
-    xmltvChId.type = 'text';
-    xmltvChId.setAttribute('is', 'emby-input');
-    xmltvChId.placeholder = 'e.g. DR1.dr.dk';
+    const xmltvChId = document.createElement('select');
+    xmltvChId.setAttribute('is', 'emby-select');
+    const emptyOpt = document.createElement('option');
+    emptyOpt.value = '';
+    emptyOpt.textContent = '-- Select --';
+    xmltvChId.appendChild(emptyOpt);
     xmltvChId.value = overrides.XmltvChannelId ?? '';
     xmltvChId.onchange = () => xmltvChId.value ?
       overrides.XmltvChannelId = xmltvChId.value :
       delete overrides.XmltvChannelId;
     td.appendChild(xmltvChId);
     tr.appendChild(td);
+
+    // When EPG source changes, fetch XMLTV channels for the dropdown
+    const loadXmltvChannels = (sourceId) => {
+      // Clear existing options except the first
+      while (xmltvChId.options.length > 1) xmltvChId.remove(1);
+      if (!sourceId) return;
+      Xtream.fetchJson(`Xtream/EpgChannels/${sourceId}`).then(channels => {
+        channels.forEach(ch => {
+          const opt = document.createElement('option');
+          opt.value = ch.Id;
+          opt.textContent = `${ch.DisplayName} (${ch.Id})`;
+          xmltvChId.appendChild(opt);
+        });
+        xmltvChId.value = overrides.XmltvChannelId ?? '';
+      }).catch(() => {});
+    };
+    epgSource.addEventListener('change', () => loadXmltvChannels(epgSource.value));
+    // Load initial channels if source is already set
+    if (overrides.EpgSourceId) loadXmltvChannels(overrides.EpgSourceId);
 
     return tr;
   };
