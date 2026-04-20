@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Xtream.Configuration;
@@ -40,8 +41,10 @@ public class RecordingEngine : IHostedService, IDisposable
     private readonly ILogger<RecordingEngine> _logger;
     private readonly LiveTvService _liveTvService;
     private readonly IServerConfigurationManager _config;
+    private readonly IRecordingsManager _recordingsManager;
     private readonly ConcurrentDictionary<string, ActiveRecording> _activeRecordings = new();
     private readonly ConcurrentDictionary<string, CompletedRecording> _completedRecordings = new();
+    private ConcurrentDictionary<string, ActiveRecordingInfo>? _jellyfinActiveRecordings;
     private Timer? _pollTimer;
     private bool _disposed;
 
@@ -52,12 +55,27 @@ public class RecordingEngine : IHostedService, IDisposable
     /// <param name="logger">Instance of the <see cref="ILogger{RecordingEngine}"/> interface.</param>
     /// <param name="liveTvService">Instance of the <see cref="LiveTvService"/> class.</param>
     /// <param name="config">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
-    public RecordingEngine(IHttpClientFactory httpClientFactory, ILogger<RecordingEngine> logger, LiveTvService liveTvService, IServerConfigurationManager config)
+    /// <param name="recordingsManager">Instance of the <see cref="IRecordingsManager"/> interface.</param>
+    public RecordingEngine(IHttpClientFactory httpClientFactory, ILogger<RecordingEngine> logger, LiveTvService liveTvService, IServerConfigurationManager config, IRecordingsManager recordingsManager)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _liveTvService = liveTvService;
         _config = config;
+        _recordingsManager = recordingsManager;
+
+        // Access RecordingsManager's internal _activeRecordings via reflection
+        // so that Video.IsActiveRecording() recognizes our recordings.
+        var field = _recordingsManager.GetType().GetField("_activeRecordings", BindingFlags.NonPublic | BindingFlags.Instance);
+        if (field != null)
+        {
+            _jellyfinActiveRecordings = field.GetValue(_recordingsManager) as ConcurrentDictionary<string, ActiveRecordingInfo>;
+        }
+
+        if (_jellyfinActiveRecordings == null)
+        {
+            _logger.LogWarning("Could not access RecordingsManager._activeRecordings via reflection. Active recordings may not show in UI.");
+        }
     }
 
     /// <summary>
@@ -241,6 +259,9 @@ public class RecordingEngine : IHostedService, IDisposable
         _logger.LogInformation("Recording started: {Name} -> {Path}", timer.Name, filePath);
         recording.FilePath = filePath;
 
+        // Register with Jellyfin's RecordingsManager so Video.IsActiveRecording() returns true
+        RegisterActiveRecording(timer.Id, filePath, timer, recording.CancellationTokenSource);
+
         try
         {
             // Build the stream URL (same logic as Restream)
@@ -280,6 +301,9 @@ public class RecordingEngine : IHostedService, IDisposable
         }
         finally
         {
+            // Unregister from Jellyfin's RecordingsManager
+            UnregisterActiveRecording(timer.Id);
+
             _activeRecordings.TryRemove(timer.Id, out _);
 
             if (File.Exists(filePath) && new FileInfo(filePath).Length > 0)
@@ -304,5 +328,29 @@ public class RecordingEngine : IHostedService, IDisposable
 
             recording.Dispose();
         }
+    }
+
+    private void RegisterActiveRecording(string id, string path, TimerInfo timer, CancellationTokenSource cts)
+    {
+        if (_jellyfinActiveRecordings == null)
+        {
+            return;
+        }
+
+        var info = new ActiveRecordingInfo
+        {
+            Id = id,
+            Path = path,
+            Timer = timer,
+            CancellationTokenSource = cts,
+        };
+
+        _jellyfinActiveRecordings[id] = info;
+        _logger.LogDebug("Registered active recording with RecordingsManager: {Path}", path);
+    }
+
+    private void UnregisterActiveRecording(string id)
+    {
+        _jellyfinActiveRecordings?.TryRemove(id, out _);
     }
 }

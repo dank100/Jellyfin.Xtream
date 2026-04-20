@@ -46,6 +46,11 @@ public sealed class ActiveRecording : IDisposable
     public string? FilePath { get; set; }
 
     /// <summary>
+    /// Gets the cancellation token source for this recording.
+    /// </summary>
+    public CancellationTokenSource CancellationTokenSource => _cts;
+
+    /// <summary>
     /// Gets the cancellation token for this recording.
     /// </summary>
     public CancellationToken CancellationToken => _cts.Token;
