@@ -44,16 +44,47 @@ namespace Jellyfin.Xtream;
 /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
 /// <param name="memoryCache">Instance of the <see cref="IMemoryCache"/> interface.</param>
 /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
-public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger<LiveTvService> logger, IMemoryCache memoryCache, IXtreamClient xtreamClient) : ILiveTvService, ISupportsDirectStreamProvider
+/// <param name="timerStore">Instance of the <see cref="TimerStore"/> class.</param>
+public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger<LiveTvService> logger, IMemoryCache memoryCache, IXtreamClient xtreamClient, TimerStore timerStore) : ILiveTvService, ISupportsDirectStreamProvider
 {
-    private readonly Dictionary<string, TimerInfo> _timers = new();
-    private readonly Dictionary<string, SeriesTimerInfo> _seriesTimers = new();
+    private readonly Dictionary<string, TimerInfo> _timers = timerStore.LoadTimers();
+    private readonly Dictionary<string, SeriesTimerInfo> _seriesTimers = timerStore.LoadSeriesTimers();
 
     /// <inheritdoc />
     public string Name => "Xtream Live";
 
     /// <inheritdoc />
     public string HomePageUrl => string.Empty;
+
+    /// <summary>
+    /// Gets a snapshot of current timers for the recording engine.
+    /// </summary>
+    /// <returns>A read-only list of current timer infos.</returns>
+    public IReadOnlyList<TimerInfo> GetTimersSnapshot()
+    {
+        lock (_timers)
+        {
+            return _timers.Values.ToList();
+        }
+    }
+
+    /// <summary>
+    /// Updates a timer's status in the store and persists.
+    /// </summary>
+    /// <param name="timer">The timer to update.</param>
+    public void UpdateTimerStatus(TimerInfo timer)
+    {
+        lock (_timers)
+        {
+            _timers[timer.Id] = timer;
+            PersistTimers();
+        }
+    }
+
+    private void PersistTimers()
+    {
+        timerStore.SaveTimers(_timers.Values);
+    }
 
     /// <inheritdoc />
     public async Task<IEnumerable<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken)
@@ -79,7 +110,12 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <inheritdoc />
     public Task CancelTimerAsync(string timerId, CancellationToken cancellationToken)
     {
-        _timers.Remove(timerId);
+        lock (_timers)
+        {
+            _timers.Remove(timerId);
+            PersistTimers();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -91,7 +127,12 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             info.Id = Guid.NewGuid().ToString("N");
         }
 
-        _timers[info.Id] = info;
+        lock (_timers)
+        {
+            _timers[info.Id] = info;
+            PersistTimers();
+        }
+
         logger.LogInformation("Timer created: {TimerId} for channel {ChannelId}", info.Id, info.ChannelId);
         return Task.CompletedTask;
     }
@@ -99,7 +140,10 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <inheritdoc />
     public Task<IEnumerable<TimerInfo>> GetTimersAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult<IEnumerable<TimerInfo>>(_timers.Values.ToList());
+        lock (_timers)
+        {
+            return Task.FromResult<IEnumerable<TimerInfo>>(_timers.Values.ToList());
+        }
     }
 
     /// <inheritdoc />
@@ -117,6 +161,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         }
 
         _seriesTimers[info.Id] = info;
+        timerStore.SaveSeriesTimers(_seriesTimers.Values);
         logger.LogInformation("Series timer created: {TimerId}", info.Id);
         return Task.CompletedTask;
     }
@@ -125,13 +170,19 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     public Task UpdateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
     {
         _seriesTimers[info.Id] = info;
+        timerStore.SaveSeriesTimers(_seriesTimers.Values);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task UpdateTimerAsync(TimerInfo updatedTimer, CancellationToken cancellationToken)
     {
-        _timers[updatedTimer.Id] = updatedTimer;
+        lock (_timers)
+        {
+            _timers[updatedTimer.Id] = updatedTimer;
+            PersistTimers();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -139,6 +190,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     public Task CancelSeriesTimerAsync(string timerId, CancellationToken cancellationToken)
     {
         _seriesTimers.Remove(timerId);
+        timerStore.SaveSeriesTimers(_seriesTimers.Values);
         return Task.CompletedTask;
     }
 
@@ -259,12 +311,30 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <returns>The TimeSpan to add to EPG times.</returns>
     internal static TimeSpan GetEpgShift(string? epgTimezone, string? myTimezone)
     {
-        TimeZoneInfo epgTz = string.IsNullOrEmpty(epgTimezone)
-            ? TimeZoneInfo.Utc
-            : TimeZoneInfo.FindSystemTimeZoneById(epgTimezone);
-        TimeZoneInfo myTz = string.IsNullOrEmpty(myTimezone)
-            ? TimeZoneInfo.Local
-            : TimeZoneInfo.FindSystemTimeZoneById(myTimezone);
+        TimeZoneInfo epgTz;
+        TimeZoneInfo myTz;
+
+        try
+        {
+            epgTz = string.IsNullOrEmpty(epgTimezone)
+                ? TimeZoneInfo.Utc
+                : TimeZoneInfo.FindSystemTimeZoneById(epgTimezone);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeSpan.Zero;
+        }
+
+        try
+        {
+            myTz = string.IsNullOrEmpty(myTimezone)
+                ? TimeZoneInfo.Local
+                : TimeZoneInfo.FindSystemTimeZoneById(myTimezone);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeSpan.Zero;
+        }
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         return myTz.GetUtcOffset(now) - epgTz.GetUtcOffset(now);

@@ -15,6 +15,7 @@
 
 using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Providers;
+using Jellyfin.Xtream.Service;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.LiveTv;
@@ -31,10 +32,14 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<IXtreamClient, XtreamClient>();
-        serviceCollection.AddSingleton<ILiveTvService, LiveTvService>();
+        serviceCollection.AddSingleton<TimerStore>();
+        serviceCollection.AddSingleton<LiveTvService>();
+        serviceCollection.AddSingleton<ILiveTvService>(sp => sp.GetRequiredService<LiveTvService>());
         serviceCollection.AddSingleton<IChannel, CatchupChannel>();
         serviceCollection.AddSingleton<IChannel, SeriesChannel>();
         serviceCollection.AddSingleton<IChannel, VodChannel>();
         serviceCollection.AddSingleton<IPreRefreshProvider, XtreamVodProvider>();
+        serviceCollection.AddSingleton<RecordingEngine>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<RecordingEngine>());
     }
 }
