@@ -217,13 +217,31 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
         plugin.Configuration.LiveTvOverrides.TryGetValue(channelId, out ChannelOverrides? overrides);
         TimeSpan epgShift = LiveTvService.GetEpgShift(overrides?.EpgTimezone, plugin.Configuration.MyTimezone);
 
+        // Resolve the EPG timezone for converting UTC display times to local broadcast time.
+        TimeZoneInfo? displayTz = null;
+        if (!string.IsNullOrEmpty(overrides?.EpgTimezone))
+        {
+            try
+            {
+                displayTz = TimeZoneInfo.FindSystemTimeZoneById(overrides.EpgTimezone);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+        }
+
         foreach (EpgInfo epg in epgs.Listings.Where(epg => (epg.End + epgShift) >= start && (epg.Start + epgShift) <= end))
         {
             DateTime shiftedStart = epg.Start + epgShift;
             DateTime shiftedEnd = epg.End + epgShift;
             ParsedName parsedName = StreamService.ParseName(epg.Title);
             int durationMinutes = (int)Math.Ceiling((shiftedEnd - shiftedStart).TotalMinutes);
-            string dateTitle = shiftedStart.ToString("HH:mm", CultureInfo.InvariantCulture);
+
+            // Convert UTC time to EPG timezone for display (matches what the guide shows via browser conversion).
+            DateTime displayStart = displayTz != null
+                ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(shiftedStart, DateTimeKind.Utc), displayTz)
+                : shiftedStart;
+            string dateTitle = displayStart.ToString("HH:mm", CultureInfo.InvariantCulture);
             List<MediaSourceInfo> sources = [
                 plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: epg.StartLocalTime, durationMinutes: durationMinutes)
             ];
