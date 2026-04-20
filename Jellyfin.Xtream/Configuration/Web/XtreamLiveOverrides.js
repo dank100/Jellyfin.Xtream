@@ -1,5 +1,5 @@
 export default function (view) {
-  const createChannelRow = (channel, overrides) => {
+  const createChannelRow = (channel, overrides, epgSources) => {
     const tr = document.createElement('tr');
     tr.dataset['channelId'] = channel.Id;
 
@@ -51,6 +51,38 @@ export default function (view) {
     td.appendChild(epgTz);
     tr.appendChild(td);
 
+    td = document.createElement('td');
+    const epgSource = document.createElement('select');
+    epgSource.setAttribute('is', 'emby-select');
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'Xtream (default)';
+    epgSource.appendChild(defaultOpt);
+    (epgSources || []).forEach(src => {
+      const opt = document.createElement('option');
+      opt.value = src.Id;
+      opt.textContent = src.Name;
+      epgSource.appendChild(opt);
+    });
+    epgSource.value = overrides.EpgSourceId ?? '';
+    epgSource.onchange = () => epgSource.value ?
+      overrides.EpgSourceId = epgSource.value :
+      delete overrides.EpgSourceId;
+    td.appendChild(epgSource);
+    tr.appendChild(td);
+
+    td = document.createElement('td');
+    const xmltvChId = document.createElement('input');
+    xmltvChId.type = 'text';
+    xmltvChId.setAttribute('is', 'emby-input');
+    xmltvChId.placeholder = 'e.g. DR1.dr.dk';
+    xmltvChId.value = overrides.XmltvChannelId ?? '';
+    xmltvChId.onchange = () => xmltvChId.value ?
+      overrides.XmltvChannelId = xmltvChId.value :
+      delete overrides.XmltvChannelId;
+    td.appendChild(xmltvChId);
+    tr.appendChild(td);
+
     return tr;
   };
 
@@ -67,12 +99,14 @@ export default function (view) {
     const table = view.querySelector('#LiveChannels');
     Dashboard.showLoadingMsg();
     Promise.all([
-      getConfig.then((config) => config.LiveTvOverrides),
+      getConfig,
       Xtream.fetchJson('Xtream/LiveTv'),
-    ]).then(([data, channels]) => {
+    ]).then(([config, channels]) => {
+      const data = config.LiveTvOverrides;
+      const epgSources = config.EpgSources || [];
       for (const channel of channels) {
         data[channel.Id] ??= {};
-        const row = createChannelRow(channel, data[channel.Id]);
+        const row = createChannelRow(channel, data[channel.Id], epgSources);
         table.appendChild(row);
       }
       Dashboard.hideLoadingMsg();

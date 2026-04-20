@@ -33,6 +33,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         serviceCollection.AddSingleton<IXtreamClient, XtreamClient>();
         serviceCollection.AddSingleton<TimerStore>();
+        serviceCollection.AddSingleton<XmltvParser>();
         serviceCollection.AddSingleton<LiveTvService>();
         serviceCollection.AddSingleton<ILiveTvService>(sp => sp.GetRequiredService<LiveTvService>());
         serviceCollection.AddSingleton<IChannel, CatchupChannel>();

@@ -13,41 +13,47 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-namespace Jellyfin.Xtream.Configuration;
+using System;
+
+namespace Jellyfin.Xtream.Service;
 
 /// <summary>
-/// Override configuration for a Live TV channel.
+/// Represents a programme from an XMLTV source.
 /// </summary>
-public class ChannelOverrides
+public class XmltvProgramme
 {
     /// <summary>
-    /// Gets or sets the TV channel number.
+    /// Gets or sets the XMLTV channel ID.
     /// </summary>
-    public int? Number { get; set; }
+    public string ChannelId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the TV channel name.
+    /// Gets or sets the start time in UTC.
     /// </summary>
-    public string? Name { get; set; }
+    public DateTime Start { get; set; }
 
     /// <summary>
-    /// Gets or sets the url of the channel logo.
+    /// Gets or sets the stop time in UTC.
     /// </summary>
-    public string? LogoUrl { get; set; }
+    public DateTime Stop { get; set; }
 
     /// <summary>
-    /// Gets or sets the IANA timezone of the EPG data for this channel (e.g. "Europe/London").
+    /// Gets or sets the programme title.
     /// </summary>
-    public string? EpgTimezone { get; set; }
+    public string Title { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the ID of the external XMLTV EPG source to use for this channel.
-    /// When null or empty, the default Xtream EPG is used.
+    /// Gets or sets the programme description.
     /// </summary>
-    public string? EpgSourceId { get; set; }
+    public string? Description { get; set; }
 
     /// <summary>
-    /// Gets or sets the channel ID within the XMLTV source to map to this channel.
+    /// Gets or sets the programme category.
     /// </summary>
-    public string? XmltvChannelId { get; set; }
+    public string? Category { get; set; }
+
+    /// <summary>
+    /// Gets or sets the programme icon URL.
+    /// </summary>
+    public string? Icon { get; set; }
 }

@@ -15,6 +15,12 @@ export default function (view) {
       view.querySelector('#Password').value = config.Password;
       view.querySelector('#UserAgent').value = config.UserAgent;
       view.querySelector('#MyTimezone').value = config.MyTimezone;
+
+      // Populate EPG sources
+      const tbody = view.querySelector('#EpgSourcesBody');
+      tbody.innerHTML = '';
+      (config.EpgSources || []).forEach(src => addEpgSourceRow(tbody, src.Id, src.Name, src.Url));
+
       Dashboard.hideLoadingMsg();
     });
 
@@ -52,6 +58,23 @@ export default function (view) {
       view.querySelector('#UserAgent').value = navigator.userAgent;
     });
 
+    const addEpgSourceRow = (tbody, id, name, url) => {
+      const tr = document.createElement('tr');
+      tr.dataset.id = id || crypto.randomUUID();
+      tr.innerHTML = `
+        <td><input type="text" class="epg-name" value="${name || ''}" is="emby-input" style="width:100%" /></td>
+        <td><input type="text" class="epg-url" value="${url || ''}" is="emby-input" style="width:100%" /></td>
+        <td><button type="button" is="emby-button" class="raised epg-remove">Remove</button></td>
+      `;
+      tr.querySelector('.epg-remove').addEventListener('click', () => tr.remove());
+      tbody.appendChild(tr);
+    };
+
+    view.querySelector('#AddEpgSource').addEventListener('click', (e) => {
+      e.preventDefault();
+      addEpgSourceRow(view.querySelector('#EpgSourcesBody'), '', '', '');
+    });
+
     view.querySelector('#XtreamCredentialsForm').addEventListener('submit', (e) => {
       Dashboard.showLoadingMsg();
 
@@ -61,6 +84,17 @@ export default function (view) {
         config.Password = view.querySelector('#Password').value;
         config.UserAgent = view.querySelector('#UserAgent').value;
         config.MyTimezone = view.querySelector('#MyTimezone').value;
+
+        // Collect EPG sources from table
+        config.EpgSources = [];
+        view.querySelectorAll('#EpgSourcesBody tr').forEach(tr => {
+          const name = tr.querySelector('.epg-name').value.trim();
+          const url = tr.querySelector('.epg-url').value.trim();
+          if (name && url) {
+            config.EpgSources.push({ Id: tr.dataset.id, Name: name, Url: url });
+          }
+        });
+
         ApiClient.updatePluginConfiguration(pluginId, config).then((result) => {
           reloadStatus();
           Dashboard.processPluginConfigurationUpdateResult(result);

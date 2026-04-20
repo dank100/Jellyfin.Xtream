@@ -37,7 +37,8 @@ namespace Jellyfin.Xtream;
 /// </summary>
 /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
 /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
-public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtreamClient) : IChannel, IDisableMediaSourceDisplay
+/// <param name="xmltvParser">Instance of the <see cref="XmltvParser"/> class.</param>
+public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtreamClient, XmltvParser xmltvParser) : IChannel, IDisableMediaSourceDisplay
 {
     private readonly ILogger<CatchupChannel> _logger = logger;
 
@@ -185,34 +186,6 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
         List<StreamInfo> streams = await xtreamClient.GetLiveStreamsByCategoryAsync(plugin.Creds, categoryId, cancellationToken).ConfigureAwait(false);
         StreamInfo channel = streams.FirstOrDefault(s => s.StreamId == channelId)
             ?? throw new ArgumentException($"Channel with id {channelId} not found in category {categoryId}");
-        EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, channelId, cancellationToken).ConfigureAwait(false);
-        List<ChannelItemInfo> items = [];
-
-        // Create fallback single-stream catch-up if no EPG is available.
-        if (epgs.Listings.Count == 0)
-        {
-            int durationMinutes = 24 * 60;
-            return new()
-            {
-                Items = new List<ChannelItemInfo>()
-                    {
-                        new()
-                        {
-                            ContentType = ChannelMediaContentType.TvExtra,
-                            Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channelId, 0, day).ToString(),
-                            IsLiveStream = false,
-                            MediaSources = [
-                                plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: start, durationMinutes: durationMinutes)
-                            ],
-                            MediaType = ChannelMediaType.Video,
-                            Name = $"No EPG available",
-                            RunTimeTicks = durationMinutes * TimeSpan.TicksPerMinute,
-                            Type = ChannelItemType.Media,
-                        }
-                    },
-                TotalRecordCount = 1
-            };
-        }
 
         plugin.Configuration.LiveTvOverrides.TryGetValue(channelId, out ChannelOverrides? overrides);
         TimeSpan epgShift = LiveTvService.GetEpgShift(overrides?.EpgTimezone, plugin.Configuration.MyTimezone);
@@ -230,37 +203,105 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
             }
         }
 
-        foreach (EpgInfo epg in epgs.Listings.Where(epg => (epg.End + epgShift) >= start && (epg.Start + epgShift) <= end))
+        // Check for external XMLTV source override
+        EpgSource? epgSource = !string.IsNullOrEmpty(overrides?.EpgSourceId)
+            ? plugin.Configuration.EpgSources.FirstOrDefault(s => s.Id == overrides.EpgSourceId)
+            : null;
+
+        List<ChannelItemInfo> items = [];
+
+        if (epgSource != null && !string.IsNullOrEmpty(overrides?.XmltvChannelId))
         {
-            DateTime shiftedStart = epg.Start + epgShift;
-            DateTime shiftedEnd = epg.End + epgShift;
-            ParsedName parsedName = StreamService.ParseName(epg.Title);
-            int durationMinutes = (int)Math.Ceiling((shiftedEnd - shiftedStart).TotalMinutes);
-
-            // Convert UTC time to EPG timezone for display (matches what the guide shows via browser conversion).
-            DateTime displayStart = displayTz != null
-                ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(shiftedStart, DateTimeKind.Utc), displayTz)
-                : shiftedStart;
-            string dateTitle = displayStart.ToString("HH:mm", CultureInfo.InvariantCulture);
-            List<MediaSourceInfo> sources = [
-                plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: epg.StartLocalTime, durationMinutes: durationMinutes)
-            ];
-
-            items.Add(new()
+            var programmes = await xmltvParser.GetProgrammesAsync(epgSource, overrides.XmltvChannelId, cancellationToken).ConfigureAwait(false);
+            int epgId = 0;
+            foreach (var prog in programmes.Where(p => (p.Stop + epgShift) >= start && (p.Start + epgShift) <= end))
             {
-                ContentType = ChannelMediaContentType.TvExtra,
-                DateCreated = shiftedStart,
-                Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channel.StreamId, epg.Id, day).ToString(),
-                IsLiveStream = false,
-                MediaSources = sources,
-                MediaType = ChannelMediaType.Video,
-                Name = $"{dateTitle} - {parsedName.Title}",
-                Overview = epg.Description,
-                PremiereDate = shiftedStart,
-                RunTimeTicks = durationMinutes * TimeSpan.TicksPerMinute,
-                Tags = new List<string>(parsedName.Tags),
-                Type = ChannelItemType.Media,
-            });
+                DateTime shiftedStart = prog.Start + epgShift;
+                DateTime shiftedEnd = prog.Stop + epgShift;
+                int durationMinutes = (int)Math.Ceiling((shiftedEnd - shiftedStart).TotalMinutes);
+                DateTime displayStart = displayTz != null
+                    ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(shiftedStart, DateTimeKind.Utc), displayTz)
+                    : shiftedStart;
+                string dateTitle = displayStart.ToString("HH:mm", CultureInfo.InvariantCulture);
+
+                items.Add(new()
+                {
+                    ContentType = ChannelMediaContentType.TvExtra,
+                    DateCreated = shiftedStart,
+                    Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channel.StreamId, epgId++, day).ToString(),
+                    IsLiveStream = false,
+                    MediaSources = [
+                        plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: shiftedStart, durationMinutes: durationMinutes)
+                    ],
+                    MediaType = ChannelMediaType.Video,
+                    Name = $"{dateTitle} - {prog.Title}",
+                    Overview = prog.Description,
+                    PremiereDate = shiftedStart,
+                    RunTimeTicks = durationMinutes * TimeSpan.TicksPerMinute,
+                    Type = ChannelItemType.Media,
+                });
+            }
+        }
+        else
+        {
+            EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, channelId, cancellationToken).ConfigureAwait(false);
+
+            // Create fallback single-stream catch-up if no EPG is available.
+            if (epgs.Listings.Count == 0)
+            {
+                int durationMinutes = 24 * 60;
+                return new()
+                {
+                    Items = new List<ChannelItemInfo>()
+                        {
+                            new()
+                            {
+                                ContentType = ChannelMediaContentType.TvExtra,
+                                Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channelId, 0, day).ToString(),
+                                IsLiveStream = false,
+                                MediaSources = [
+                                    plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: start, durationMinutes: durationMinutes)
+                                ],
+                                MediaType = ChannelMediaType.Video,
+                                Name = $"No EPG available",
+                                RunTimeTicks = durationMinutes * TimeSpan.TicksPerMinute,
+                                Type = ChannelItemType.Media,
+                            }
+                        },
+                    TotalRecordCount = 1
+                };
+            }
+
+            foreach (EpgInfo epg in epgs.Listings.Where(epg => (epg.End + epgShift) >= start && (epg.Start + epgShift) <= end))
+            {
+                DateTime shiftedStart = epg.Start + epgShift;
+                DateTime shiftedEnd = epg.End + epgShift;
+                ParsedName parsedName = StreamService.ParseName(epg.Title);
+                int durationMinutes = (int)Math.Ceiling((shiftedEnd - shiftedStart).TotalMinutes);
+                DateTime displayStart = displayTz != null
+                    ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(shiftedStart, DateTimeKind.Utc), displayTz)
+                    : shiftedStart;
+                string dateTitle = displayStart.ToString("HH:mm", CultureInfo.InvariantCulture);
+                List<MediaSourceInfo> sources = [
+                    plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: epg.StartLocalTime, durationMinutes: durationMinutes)
+                ];
+
+                items.Add(new()
+                {
+                    ContentType = ChannelMediaContentType.TvExtra,
+                    DateCreated = shiftedStart,
+                    Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channel.StreamId, epg.Id, day).ToString(),
+                    IsLiveStream = false,
+                    MediaSources = sources,
+                    MediaType = ChannelMediaType.Video,
+                    Name = $"{dateTitle} - {parsedName.Title}",
+                    Overview = epg.Description,
+                    PremiereDate = shiftedStart,
+                    RunTimeTicks = durationMinutes * TimeSpan.TicksPerMinute,
+                    Tags = new List<string>(parsedName.Tags),
+                    Type = ChannelItemType.Media,
+                });
+            }
         }
 
         ChannelItemResult result = new()

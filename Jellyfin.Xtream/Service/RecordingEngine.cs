@@ -26,6 +26,7 @@ using System.Threading.Tasks;
 using Jellyfin.Xtream.Configuration;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.LiveTv;
 using Microsoft.Extensions.Hosting;
@@ -43,6 +44,7 @@ public class RecordingEngine : IHostedService, IDisposable
     private readonly LiveTvService _liveTvService;
     private readonly IServerConfigurationManager _config;
     private readonly IRecordingsManager _recordingsManager;
+    private readonly ILibraryMonitor _libraryMonitor;
     private readonly ConcurrentDictionary<string, ActiveRecording> _activeRecordings = new();
     private readonly ConcurrentDictionary<string, CompletedRecording> _completedRecordings = new();
     private ConcurrentDictionary<string, ActiveRecordingInfo>? _jellyfinActiveRecordings;
@@ -57,13 +59,15 @@ public class RecordingEngine : IHostedService, IDisposable
     /// <param name="liveTvService">Instance of the <see cref="LiveTvService"/> class.</param>
     /// <param name="config">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
     /// <param name="recordingsManager">Instance of the <see cref="IRecordingsManager"/> interface.</param>
-    public RecordingEngine(IHttpClientFactory httpClientFactory, ILogger<RecordingEngine> logger, LiveTvService liveTvService, IServerConfigurationManager config, IRecordingsManager recordingsManager)
+    /// <param name="libraryMonitor">Instance of the <see cref="ILibraryMonitor"/> interface.</param>
+    public RecordingEngine(IHttpClientFactory httpClientFactory, ILogger<RecordingEngine> logger, LiveTvService liveTvService, IServerConfigurationManager config, IRecordingsManager recordingsManager, ILibraryMonitor libraryMonitor)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _liveTvService = liveTvService;
         _config = config;
         _recordingsManager = recordingsManager;
+        _libraryMonitor = libraryMonitor;
 
         // Access RecordingsManager's internal _activeRecordings via reflection
         // so that Video.IsActiveRecording() recognizes our recordings.
@@ -263,6 +267,9 @@ public class RecordingEngine : IHostedService, IDisposable
         // Register with Jellyfin's RecordingsManager so Video.IsActiveRecording() returns true
         RegisterActiveRecording(timer.Id, filePath, timer, recording.CancellationTokenSource);
 
+        // Notify Jellyfin's library monitor so the recording appears in the library
+        _libraryMonitor.ReportFileSystemChanged(filePath);
+
         try
         {
             // Build the stream URL (same logic as Restream)
@@ -271,12 +278,12 @@ public class RecordingEngine : IHostedService, IDisposable
             StreamService.FromGuid(guid, out int _, out int streamId, out int _, out int _);
             string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{streamId}";
 
-            // Use ffmpeg to remux the stream to MKV for proper seek index support.
+            // Use ffmpeg to re-encode with frequent keyframes for fast seeking.
             var ffmpegPath = GetFfmpegPath();
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
-                Arguments = $"-i \"{url}\" -c copy -f matroska -y \"{filePath}\"",
+                Arguments = $"-i \"{url}\" -c:v libx264 -preset ultrafast -crf 18 -force_key_frames \"expr:gte(t,n_forced*1)\" -c:a aac -b:a 192k -f matroska -y \"{filePath}\"",
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
@@ -357,6 +364,7 @@ public class RecordingEngine : IHostedService, IDisposable
                     CompletedAt = DateTime.UtcNow,
                 };
                 _logger.LogInformation("Recording completed: {Name} ({Size} bytes)", timer.Name, new FileInfo(filePath).Length);
+                _libraryMonitor.ReportFileSystemChanged(filePath);
             }
             else
             {

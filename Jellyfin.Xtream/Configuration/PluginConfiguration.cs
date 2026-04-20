@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using MediaBrowser.Model.Plugins;
 
@@ -90,13 +91,23 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public string MyTimezone { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Gets or sets the list of external XMLTV EPG sources.
+    /// </summary>
+    public Collection<EpgSource> EpgSources { get; set; } = [];
+
     /// <inheritdoc />
     public override int GetHashCode()
     {
         var hash = System.HashCode.Combine(BaseUrl, Username, MyTimezone, IsCatchupVisible, IsSeriesVisible, IsVodVisible);
         foreach (var kvp in LiveTvOverrides.OrderBy(k => k.Key))
         {
-            hash = System.HashCode.Combine(hash, kvp.Key, kvp.Value.EpgTimezone);
+            hash = System.HashCode.Combine(hash, kvp.Key, kvp.Value.EpgTimezone, kvp.Value.EpgSourceId, kvp.Value.XmltvChannelId);
+        }
+
+        foreach (var src in EpgSources.OrderBy(s => s.Id))
+        {
+            hash = System.HashCode.Combine(hash, src.Id, src.Url);
         }
 
         return hash;

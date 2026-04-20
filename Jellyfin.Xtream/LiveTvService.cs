@@ -45,7 +45,8 @@ namespace Jellyfin.Xtream;
 /// <param name="memoryCache">Instance of the <see cref="IMemoryCache"/> interface.</param>
 /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
 /// <param name="timerStore">Instance of the <see cref="TimerStore"/> class.</param>
-public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger<LiveTvService> logger, IMemoryCache memoryCache, IXtreamClient xtreamClient, TimerStore timerStore) : ILiveTvService, ISupportsDirectStreamProvider
+/// <param name="xmltvParser">Instance of the <see cref="XmltvParser"/> class.</param>
+public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger<LiveTvService> logger, IMemoryCache memoryCache, IXtreamClient xtreamClient, TimerStore timerStore, XmltvParser xmltvParser) : ILiveTvService, ISupportsDirectStreamProvider
 {
     private readonly Dictionary<string, TimerInfo> _timers = timerStore.LoadTimers();
     private readonly Dictionary<string, SeriesTimerInfo> _seriesTimers = timerStore.LoadSeriesTimers();
@@ -241,7 +242,9 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         plugin.Configuration.LiveTvOverrides.TryGetValue(streamId, out ChannelOverrides? overrides);
         string epgTz = overrides?.EpgTimezone ?? string.Empty;
         string myTz = plugin.Configuration.MyTimezone ?? string.Empty;
-        string key = $"xtream-epg-{channelId}-{epgTz}-{myTz}";
+        string epgSourceId = overrides?.EpgSourceId ?? string.Empty;
+        string xmltvChId = overrides?.XmltvChannelId ?? string.Empty;
+        string key = $"xtream-epg-{channelId}-{epgTz}-{myTz}-{epgSourceId}-{xmltvChId}";
 
         ICollection<ProgramInfo>? items = null;
         if (memoryCache.TryGetValue(key, out ICollection<ProgramInfo>? o))
@@ -251,8 +254,33 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         else
         {
             items = new List<ProgramInfo>();
+            TimeSpan epgShift = GetEpgShift(epgTz, myTz);
+
+            // Check for external XMLTV source override
+            EpgSource? epgSource = !string.IsNullOrEmpty(epgSourceId)
+                ? plugin.Configuration.EpgSources.FirstOrDefault(s => s.Id == epgSourceId)
+                : null;
+
+            if (epgSource != null && !string.IsNullOrEmpty(xmltvChId))
             {
-                TimeSpan epgShift = GetEpgShift(epgTz, myTz);
+                var programmes = await xmltvParser.GetProgrammesAsync(epgSource, xmltvChId, cancellationToken).ConfigureAwait(false);
+                int epgId = 0;
+                foreach (var prog in programmes)
+                {
+                    items.Add(new()
+                    {
+                        Id = StreamService.ToGuid(StreamService.EpgPrefix, streamId, epgId++, 0).ToString(),
+                        ChannelId = channelId,
+                        StartDate = prog.Start + epgShift,
+                        EndDate = prog.Stop + epgShift,
+                        Name = prog.Title,
+                        Overview = prog.Description,
+                        ImageUrl = prog.Icon,
+                    });
+                }
+            }
+            else
+            {
                 EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, streamId, cancellationToken).ConfigureAwait(false);
                 foreach (EpgInfo epg in epgs.Listings)
                 {
