@@ -80,45 +80,80 @@ export default function (view) {
     tr.appendChild(td);
 
     td = document.createElement('td');
-    const xmltvChId = document.createElement('select');
-    xmltvChId.setAttribute('is', 'emby-select');
-    const emptyOpt = document.createElement('option');
-    emptyOpt.value = '';
-    emptyOpt.textContent = '-- Select --';
-    xmltvChId.appendChild(emptyOpt);
+    const xmltvChId = document.createElement('input');
+    xmltvChId.type = 'text';
+    xmltvChId.className = 'emby-input';
+    xmltvChId.placeholder = 'Type to search...';
+    xmltvChId.style.cssText = 'width:100%;padding:.35em .5em;font-size:.9em;box-sizing:border-box;';
     xmltvChId.value = overrides.XmltvChannelId ?? '';
-    xmltvChId.addEventListener('change', () => {
+    xmltvChId.setAttribute('list', `xmltv-list-${channel.Id}`);
+    const datalist = document.createElement('datalist');
+    datalist.id = `xmltv-list-${channel.Id}`;
+    td.appendChild(xmltvChId);
+    td.appendChild(datalist);
+
+    const xmltvLabel = document.createElement('span');
+    xmltvLabel.className = 'xtream-ch-label';
+    xmltvLabel.textContent = '';
+    td.appendChild(xmltvLabel);
+
+    xmltvChId.addEventListener('input', () => {
       if (xmltvChId.value) {
         overrides.XmltvChannelId = xmltvChId.value;
       } else {
         delete overrides.XmltvChannelId;
       }
+      // Update label with display name
+      const match = xmltvChId._channels?.find(ch => ch.Id === xmltvChId.value);
+      xmltvLabel.textContent = match ? match.DisplayName : '';
     });
-    td.appendChild(xmltvChId);
     tr.appendChild(td);
 
-    // When EPG source changes, fetch XMLTV channels for the dropdown
+    // Auto-match: find best XMLTV channel for this Xtream channel name
+    const autoMatch = (channels) => {
+      const chName = (channel.Name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!chName) return null;
+      // Exact match on ID
+      let best = channels.find(c => c.Id.toLowerCase().replace(/[^a-z0-9]/g, '').includes(chName));
+      if (best) return best.Id;
+      // Exact match on display name
+      best = channels.find(c => c.DisplayName.toLowerCase().replace(/[^a-z0-9]/g, '') === chName);
+      if (best) return best.Id;
+      // Substring match on display name
+      best = channels.find(c => c.DisplayName.toLowerCase().replace(/[^a-z0-9]/g, '').includes(chName));
+      if (best) return best.Id;
+      // Reverse: channel name contained in display name
+      best = channels.find(c => chName.includes(c.DisplayName.toLowerCase().replace(/[^a-z0-9]/g, '')));
+      if (best) return best.Id;
+      return null;
+    };
+
+    // When EPG source changes, fetch XMLTV channels for the datalist
     const loadXmltvChannels = (sourceId) => {
-      // Clear existing options except the first
-      while (xmltvChId.options.length > 1) xmltvChId.remove(1);
+      datalist.innerHTML = '';
+      xmltvChId._channels = [];
       if (!sourceId) return;
       Xtream.fetchJson(`Xtream/EpgChannels/${sourceId}`).then(channels => {
+        xmltvChId._channels = channels;
         channels.forEach(ch => {
           const opt = document.createElement('option');
           opt.value = ch.Id;
-          opt.textContent = `${ch.DisplayName} (${ch.Id})`;
-          xmltvChId.appendChild(opt);
+          opt.label = `${ch.DisplayName} (${ch.Id})`;
+          datalist.appendChild(opt);
         });
+        // Restore saved value or auto-match
         const savedValue = overrides.XmltvChannelId ?? '';
-        xmltvChId.value = savedValue;
-        if (xmltvChId.value !== savedValue) {
-          // Value not found in dropdown, add it manually
-          if (savedValue) {
-            const opt = document.createElement('option');
-            opt.value = savedValue;
-            opt.textContent = savedValue;
-            xmltvChId.appendChild(opt);
-            xmltvChId.value = savedValue;
+        if (savedValue) {
+          xmltvChId.value = savedValue;
+          const match = channels.find(ch => ch.Id === savedValue);
+          xmltvLabel.textContent = match ? match.DisplayName : '';
+        } else {
+          const matched = autoMatch(channels);
+          if (matched) {
+            xmltvChId.value = matched;
+            overrides.XmltvChannelId = matched;
+            const match = channels.find(ch => ch.Id === matched);
+            xmltvLabel.textContent = match ? `⚡ ${match.DisplayName}` : '';
           }
         }
       }).catch((err) => { console.error('Failed to load XMLTV channels', err); });
