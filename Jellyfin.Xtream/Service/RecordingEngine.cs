@@ -255,7 +255,7 @@ public class RecordingEngine : IHostedService, IDisposable
     private async Task RecordStreamAsync(ActiveRecording recording)
     {
         var timer = recording.Timer;
-        string fileName = $"{timer.Name}_{timer.StartDate:yyyyMMdd_HHmmss}.mkv"
+        string fileName = $"{timer.Name}_{timer.StartDate:yyyyMMdd_HHmmss}.mp4"
             .Replace(' ', '_')
             .Replace('/', '-')
             .Replace('\\', '-');
@@ -267,9 +267,6 @@ public class RecordingEngine : IHostedService, IDisposable
         // Register with Jellyfin's RecordingsManager so Video.IsActiveRecording() returns true
         RegisterActiveRecording(timer.Id, filePath, timer, recording.CancellationTokenSource);
 
-        // Notify Jellyfin's library monitor so the recording appears in the library
-        _libraryMonitor.ReportFileSystemChanged(filePath);
-
         try
         {
             // Build the stream URL (same logic as Restream)
@@ -278,12 +275,14 @@ public class RecordingEngine : IHostedService, IDisposable
             StreamService.FromGuid(guid, out int _, out int streamId, out int _, out int _);
             string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{streamId}";
 
-            // Use ffmpeg to re-encode with frequent keyframes for fast seeking.
+            // Use ffmpeg to remux into fragmented MP4 for instant seekability during recording.
+            // frag_keyframe: each source keyframe starts a new fragment (seekable while writing)
+            // empty_moov: no initial moov atom needed (playable from first byte)
             var ffmpegPath = GetFfmpegPath();
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
-                Arguments = $"-i \"{url}\" -c:v libx264 -preset ultrafast -crf 18 -force_key_frames \"expr:gte(t,n_forced*1)\" -c:a aac -b:a 192k -f matroska -y \"{filePath}\"",
+                Arguments = $"-i \"{url}\" -c copy -bsf:a aac_adtstoasc -movflags +frag_keyframe+empty_moov+default_base_moof -f mp4 -y \"{filePath}\"",
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
@@ -323,6 +322,27 @@ public class RecordingEngine : IHostedService, IDisposable
                     while ((line = await process.StandardError.ReadLineAsync(recording.CancellationToken).ConfigureAwait(false)) != null)
                     {
                         _logger.LogDebug("ffmpeg: {Line}", line);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            // Wait for ffmpeg to create the file, then notify library
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    for (int i = 0; i < 10; i++)
+                    {
+                        await Task.Delay(1000, recording.CancellationToken).ConfigureAwait(false);
+                        if (File.Exists(filePath) && new FileInfo(filePath).Length > 0)
+                        {
+                            _libraryMonitor.ReportFileSystemChanged(filePath);
+                            _logger.LogInformation("Library notified of new recording: {Path}", filePath);
+                            return;
+                        }
                     }
                 }
                 catch (OperationCanceledException)
