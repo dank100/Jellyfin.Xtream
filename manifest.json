@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n- Fix recording playback on Android TV\n- Switch to fragmented MP4 (from MKV) for active recording playback\n- Stream copy instead of re-encoding (zero CPU, instant availability)\n- Add aac_adtstoasc bitstream filter for MPEG-TS compatibility\n- Fix library scan trigger timing\n- Better Android/iOS seeking with default_base_moof flag",
+        "checksum": "dfeca4812899879390d4c788f7b4549e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.5/jellyfin-xtream_0.9.5.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-21T05:32:15Z",
+        "version": "0.9.5.0"
+      },
+      {
         "changelog": "## Changes\n- Searchable XMLTV channel input with datalist autocomplete\n- Auto-match XMLTV channels by name similarity\n- External XMLTV EPG source support with per-channel mapping\n- EPG Sources management UI\n- Improved overrides page styling and readability\n- Fix XmltvChannelId persistence\n- SSL and gzip support for XMLTV fetches",
         "checksum": "91c8c5d12544a7a052ad156b468e9902",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.4/jellyfin-xtream_0.9.4.0.zip",
