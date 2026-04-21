@@ -280,7 +280,7 @@ public class RecordingEngine : IHostedService, IDisposable
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
-                Arguments = $"-i \"{url}\" -map 0 -dn -ignore_unknown -fflags +genpts+igndts -c copy -f matroska -y \"{filePath}\"",
+                Arguments = $"-i \"{url}\" -map 0 -dn -ignore_unknown -fflags +genpts+igndts -max_interleave_delta 0 -c copy -flush_packets 1 -f matroska -live 1 -cluster_time_limit 1000 -cluster_size_limit 1048576 -y \"{filePath}\"",
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 RedirectStandardInput = true,
