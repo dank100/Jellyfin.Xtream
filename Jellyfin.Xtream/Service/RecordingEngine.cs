@@ -39,6 +39,7 @@ namespace Jellyfin.Xtream.Service;
 /// </summary>
 public class RecordingEngine : IHostedService, IDisposable
 {
+    private const string RecordingExtension = ".mkv";
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<RecordingEngine> _logger;
     private readonly LiveTvService _liveTvService;
@@ -255,7 +256,7 @@ public class RecordingEngine : IHostedService, IDisposable
     private async Task RecordStreamAsync(ActiveRecording recording)
     {
         var timer = recording.Timer;
-        string fileName = $"{timer.Name}_{timer.StartDate:yyyyMMdd_HHmmss}.mp4"
+        string fileName = $"{timer.Name}_{timer.StartDate:yyyyMMdd_HHmmss}{RecordingExtension}"
             .Replace(' ', '_')
             .Replace('/', '-')
             .Replace('\\', '-');
@@ -275,16 +276,14 @@ public class RecordingEngine : IHostedService, IDisposable
             StreamService.FromGuid(guid, out int _, out int streamId, out int _, out int _);
             string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{streamId}";
 
-            // Use ffmpeg to remux into fragmented MP4 for instant seekability during recording.
-            // frag_keyframe: each source keyframe starts a new fragment (seekable while writing)
-            // empty_moov: no initial moov atom needed (playable from first byte)
             var ffmpegPath = GetFfmpegPath();
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
-                Arguments = $"-i \"{url}\" -c copy -bsf:a aac_adtstoasc -movflags +frag_keyframe+empty_moov+default_base_moof -f mp4 -y \"{filePath}\"",
+                Arguments = $"-i \"{url}\" -map 0 -dn -ignore_unknown -fflags +genpts+igndts -c copy -f matroska -y \"{filePath}\"",
                 UseShellExecute = false,
                 RedirectStandardError = true,
+                RedirectStandardInput = true,
                 CreateNoWindow = true,
             };
 
@@ -298,15 +297,24 @@ public class RecordingEngine : IHostedService, IDisposable
             using var process = Process.Start(psi)
                 ?? throw new InvalidOperationException("Failed to start ffmpeg process");
 
-            // When recording is cancelled, kill ffmpeg gracefully
+            // Ask ffmpeg to quit cleanly so the transport stream is flushed before remuxing.
             recording.CancellationToken.Register(() =>
             {
                 try
                 {
                     if (!process.HasExited)
                     {
-                        process.Kill(true);
+                        process.StandardInput.WriteLine("q");
+                        process.StandardInput.Flush();
+
+                        if (!process.WaitForExit(5000))
+                        {
+                            process.Kill(true);
+                        }
                     }
+                }
+                catch (ObjectDisposedException)
+                {
                 }
                 catch (InvalidOperationException)
                 {
@@ -329,7 +337,6 @@ public class RecordingEngine : IHostedService, IDisposable
                 }
             });
 
-            // Wait for ffmpeg to create the file, then notify library
             _ = Task.Run(async () =>
             {
                 try
@@ -350,7 +357,7 @@ public class RecordingEngine : IHostedService, IDisposable
                 }
             });
 
-            await process.WaitForExitAsync(recording.CancellationToken).ConfigureAwait(false);
+            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
 
             if (process.ExitCode != 0 && !recording.CancellationToken.IsCancellationRequested)
             {
