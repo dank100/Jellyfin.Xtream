@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Release v0.9.7\n\n**Full Changelog**: https://github.com/dank100/Jellyfin.Xtream/compare/v0.9.6...v0.9.7",
+        "checksum": "06ce73703cb8f766eb524989cd477cee",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.7/jellyfin-xtream_0.9.7.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-21T19:58:27Z",
+        "version": "0.9.7.0"
+      },
+      {
         "changelog": "Release v0.9.6\n\n**Full Changelog**: https://github.com/dank100/Jellyfin.Xtream/compare/v0.9.5...v0.9.6",
         "checksum": "b47e3dad8e7942053e20d27e5a95fe47",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.6/jellyfin-xtream_0.9.6.0.zip",
