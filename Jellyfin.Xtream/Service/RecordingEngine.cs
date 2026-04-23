@@ -39,7 +39,8 @@ namespace Jellyfin.Xtream.Service;
 /// </summary>
 public class RecordingEngine : IHostedService, IDisposable
 {
-    private const string RecordingExtension = ".mkv";
+    private const string RecordingExtension = ".ts";
+    private const string FinalExtension = ".mkv";
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<RecordingEngine> _logger;
     private readonly LiveTvService _liveTvService;
@@ -280,7 +281,7 @@ public class RecordingEngine : IHostedService, IDisposable
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
-                Arguments = $"-i \"{url}\" -map 0 -dn -ignore_unknown -fflags +genpts+igndts -c:v copy -c:a aac -b:a 192k -f matroska -y \"{filePath}\"",
+                Arguments = $"-i \"{url}\" -map 0 -dn -sn -ignore_unknown -fflags +genpts+igndts -c:v copy -c:a aac -b:a 192k -f mpegts -y \"{filePath}\"",
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 RedirectStandardInput = true,
@@ -381,17 +382,21 @@ public class RecordingEngine : IHostedService, IDisposable
 
             if (File.Exists(filePath) && new FileInfo(filePath).Length > 0)
             {
+                // Remux from MPEG-TS to MKV for better seeking and library support
+                string finalPath = Path.ChangeExtension(filePath, FinalExtension);
+                string completedPath = await RemuxToMkvAsync(filePath, finalPath).ConfigureAwait(false);
+
                 timer.Status = RecordingStatus.Completed;
                 _liveTvService.UpdateTimerStatus(timer);
                 _completedRecordings[timer.Id] = new CompletedRecording
                 {
                     TimerId = timer.Id,
                     Timer = timer,
-                    FilePath = filePath,
+                    FilePath = completedPath,
                     CompletedAt = DateTime.UtcNow,
                 };
-                _logger.LogInformation("Recording completed: {Name} ({Size} bytes)", timer.Name, new FileInfo(filePath).Length);
-                _libraryMonitor.ReportFileSystemChanged(filePath);
+                _logger.LogInformation("Recording completed: {Name} ({Size} bytes)", timer.Name, new FileInfo(completedPath).Length);
+                _libraryMonitor.ReportFileSystemChanged(completedPath);
             }
             else
             {
@@ -402,6 +407,48 @@ public class RecordingEngine : IHostedService, IDisposable
 
             recording.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Remuxes a MPEG-TS recording to MKV for better seeking and library support.
+    /// Returns the final file path (MKV on success, original TS on failure).
+    /// </summary>
+    private async Task<string> RemuxToMkvAsync(string tsPath, string mkvPath)
+    {
+        var ffmpegPath = GetFfmpegPath();
+        var psi = new ProcessStartInfo
+        {
+            FileName = ffmpegPath,
+            Arguments = $"-i \"{tsPath}\" -map 0 -c copy -f matroska -y \"{mkvPath}\"",
+            UseShellExecute = false,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+
+        _logger.LogInformation("Remuxing recording to MKV: {Source} -> {Dest}", tsPath, mkvPath);
+
+        try
+        {
+            using var process = Process.Start(psi)
+                ?? throw new InvalidOperationException("Failed to start ffmpeg for remux");
+
+            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+
+            if (process.ExitCode == 0 && File.Exists(mkvPath) && new FileInfo(mkvPath).Length > 0)
+            {
+                File.Delete(tsPath);
+                _logger.LogInformation("Remux completed successfully: {Path}", mkvPath);
+                return mkvPath;
+            }
+
+            _logger.LogWarning("Remux failed (exit code {Code}), keeping TS file", process.ExitCode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Remux failed, keeping TS file");
+        }
+
+        return tsPath;
     }
 
     private static string GetFfmpegPath()
