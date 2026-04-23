@@ -52,6 +52,8 @@ public class RecordingEngine : IHostedService, IDisposable
     private readonly ConcurrentDictionary<string, CompletedRecording> _completedRecordings = new();
     // HLS directories that are still being served (kept through merge so viewers aren't interrupted)
     private readonly ConcurrentDictionary<string, string> _servableHlsDirs = new();
+    // TS file paths kept servable through cleanup so clients can drain remaining data
+    private readonly ConcurrentDictionary<string, string> _servableTsPaths = new();
     private Timer? _pollTimer;
     private bool _disposed;
 
@@ -252,7 +254,7 @@ public class RecordingEngine : IHostedService, IDisposable
             .Replace('/', '-')
             .Replace('\\', '-');
 
-        // TS file goes directly in recordings dir so Jellyfin picks it up in the library
+        // TS file written by ffmpeg (grows continuously during recording)
         string tsPath = Path.Combine(RecordingsPath, baseName + ".ts");
 
         // Each recording also gets a subdirectory for HLS segments (seeking + growing playback)
@@ -261,11 +263,17 @@ public class RecordingEngine : IHostedService, IDisposable
         string playlistPath = Path.Combine(segmentDir, HlsPlaylistName);
         string segmentPattern = Path.Combine(segmentDir, "seg_%05d.ts");
 
-        string hlsApiUrl = $"{_appHost.GetSmartApiUrl(IPAddress.Any)}/Xtream/Recordings/{timer.Id}/stream.m3u8";
+        // .strm file points to our growing TS endpoint so Jellyfin plays a continuous stream
+        string strmPath = Path.Combine(RecordingsPath, baseName + ".strm");
+        string serverUrl = _appHost.GetSmartApiUrl(IPAddress.Any);
+        string tsApiUrl = $"{serverUrl}/Xtream/Recordings/{timer.Id}/stream.ts";
+        string hlsApiUrl = $"{serverUrl}/Xtream/Recordings/{timer.Id}/stream.m3u8";
 
         _logger.LogInformation("Recording started: {Name} -> {TsPath}", timer.Name, tsPath);
+        _logger.LogInformation("Growing TS URL: {Url}", tsApiUrl);
         _logger.LogInformation("HLS playback URL: {Url}", hlsApiUrl);
         recording.FilePath = segmentDir;
+        recording.TsFilePath = tsPath;
 
         try
         {
@@ -343,7 +351,7 @@ public class RecordingEngine : IHostedService, IDisposable
                 }
             });
 
-            // Wait for the TS file to appear, then notify the library
+            // Wait for the TS file to appear, then create .strm and notify the library
             _ = Task.Run(async () =>
             {
                 try
@@ -353,9 +361,10 @@ public class RecordingEngine : IHostedService, IDisposable
                         await Task.Delay(1000, recording.CancellationToken).ConfigureAwait(false);
                         if (File.Exists(tsPath) && new FileInfo(tsPath).Length > 0)
                         {
-                            _libraryMonitor.ReportFileSystemChanged(tsPath);
+                            await File.WriteAllTextAsync(strmPath, tsApiUrl, recording.CancellationToken).ConfigureAwait(false);
+                            _libraryMonitor.ReportFileSystemChanged(strmPath);
                             TriggerMediaScan();
-                            _logger.LogInformation("Library notified of new recording: {Path}", tsPath);
+                            _logger.LogInformation("Library notified of new recording: {Path}", strmPath);
                             return;
                         }
                     }
@@ -382,8 +391,9 @@ public class RecordingEngine : IHostedService, IDisposable
         }
         finally
         {
-            // Keep HLS directory servable during merge so active viewers aren't interrupted
+            // Keep HLS directory and TS file servable during merge so active viewers aren't interrupted
             _servableHlsDirs[timer.Id] = segmentDir;
+            _servableTsPaths[timer.Id] = tsPath;
             _activeRecordings.TryRemove(timer.Id, out _);
 
             if (File.Exists(playlistPath))
@@ -391,21 +401,41 @@ public class RecordingEngine : IHostedService, IDisposable
                 // Merge HLS segments into a single MKV
                 string mkvPath = Path.Combine(RecordingsPath, baseName + FinalExtension);
                 string completedPath = await MergeHlsToMkvAsync(playlistPath, mkvPath).ConfigureAwait(false);
+                bool mergeSucceeded = string.Equals(completedPath, mkvPath, StringComparison.Ordinal);
 
-                // Remove from servable dirs and clean up the segment directory + TS file
+                // Now that the final file exists, remove the .strm and notify the library
+                if (File.Exists(strmPath))
+                {
+                    File.Delete(strmPath);
+                    _libraryMonitor.ReportFileSystemChanged(strmPath);
+                }
+
+                // Remove from servable dirs and clean up
                 _servableHlsDirs.TryRemove(timer.Id, out _);
+                _servableTsPaths.TryRemove(timer.Id, out _);
+
+                if (mergeSucceeded)
+                {
+                    try
+                    {
+                        Directory.Delete(segmentDir, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to clean up segment directory: {Dir}", segmentDir);
+                    }
+                }
+
                 try
                 {
-                    Directory.Delete(segmentDir, true);
+                    if (File.Exists(tsPath))
+                    {
+                        File.Delete(tsPath);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to clean up segment directory: {Dir}", segmentDir);
-                }
-
-                if (File.Exists(tsPath))
-                {
-                    File.Delete(tsPath);
+                    _logger.LogWarning(ex, "Failed to clean up TS file (may still be in use): {Path}", tsPath);
                 }
 
                 timer.Status = RecordingStatus.Completed;
@@ -424,6 +454,14 @@ public class RecordingEngine : IHostedService, IDisposable
             else
             {
                 _servableHlsDirs.TryRemove(timer.Id, out _);
+                _servableTsPaths.TryRemove(timer.Id, out _);
+
+                if (File.Exists(strmPath))
+                {
+                    File.Delete(strmPath);
+                    _libraryMonitor.ReportFileSystemChanged(strmPath);
+                }
+
                 timer.Status = RecordingStatus.Error;
                 _liveTvService.UpdateTimerStatus(timer);
                 _logger.LogWarning("Recording produced no output: {Name}", timer.Name);
@@ -454,6 +492,34 @@ public class RecordingEngine : IHostedService, IDisposable
 
         return null;
     }
+
+    /// <summary>
+    /// Gets the growing TS file path for an active recording.
+    /// Returns null if the recording is not active.
+    /// </summary>
+    /// <param name="timerId">The timer ID.</param>
+    /// <returns>The TS file path, or null.</returns>
+    public string? GetTsFilePath(string timerId)
+    {
+        if (_activeRecordings.TryGetValue(timerId, out var recording) && recording.TsFilePath != null)
+        {
+            return recording.TsFilePath;
+        }
+
+        if (_servableTsPaths.TryGetValue(timerId, out var path))
+        {
+            return path;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks whether a recording is still actively being written.
+    /// </summary>
+    /// <param name="timerId">The timer ID.</param>
+    /// <returns>True if the recording is still in progress.</returns>
+    public bool IsRecordingActive(string timerId) => _activeRecordings.ContainsKey(timerId);
 
     /// <summary>
     /// Merges HLS segments into a single MKV file.

@@ -41,9 +41,14 @@ public sealed class ActiveRecording : IDisposable
     public TimerInfo Timer { get; }
 
     /// <summary>
-    /// Gets or sets the output file path.
+    /// Gets or sets the output file path (HLS segment directory).
     /// </summary>
     public string? FilePath { get; set; }
+
+    /// <summary>
+    /// Gets or sets the growing MPEG-TS file path.
+    /// </summary>
+    public string? TsFilePath { get; set; }
 
     /// <summary>
     /// Gets the cancellation token source for this recording.
