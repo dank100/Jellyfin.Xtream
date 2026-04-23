@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Mime;
 using System.Threading;
@@ -24,6 +26,7 @@ using Jellyfin.Xtream.Client.Models;
 using Jellyfin.Xtream.Configuration;
 using Jellyfin.Xtream.Service;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -35,7 +38,7 @@ namespace Jellyfin.Xtream.Api;
 [ApiController]
 [Route("[controller]")]
 [Produces(MediaTypeNames.Application.Json)]
-public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParser) : ControllerBase
+public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParser, RecordingEngine recordingEngine) : ControllerBase
 {
     private static CategoryResponse CreateCategoryResponse(Category category) =>
         new()
@@ -222,5 +225,90 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
 
         var channels = await xmltvParser.GetChannelsAsync(source, cancellationToken).ConfigureAwait(false);
         return Ok(channels);
+    }
+
+    /// <summary>
+    /// Serves the HLS playlist for an active recording.
+    /// Anonymous access allowed — the timer ID acts as an unguessable access token.
+    /// </summary>
+    /// <param name="timerId">The timer ID of the recording.</param>
+    /// <returns>The m3u8 playlist file.</returns>
+    [AllowAnonymous]
+    [HttpGet("Recordings/{timerId}/stream.m3u8")]
+    [Produces("application/vnd.apple.mpegurl")]
+    public ActionResult GetRecordingPlaylist(string timerId)
+    {
+        // timerId is not used to build paths directly — GetHlsDirectory performs a dictionary
+        // lookup that only returns paths the plugin itself created for active recordings.
+#pragma warning disable CA3003
+        string? hlsDir = recordingEngine.GetHlsDirectory(timerId);
+        if (hlsDir == null || !Directory.Exists(hlsDir))
+        {
+            return NotFound("Recording not active or not found");
+        }
+
+        string playlistPath = Path.Combine(hlsDir, "live.m3u8");
+        if (!System.IO.File.Exists(playlistPath))
+        {
+            return NotFound("Playlist not yet available");
+        }
+
+        string[] lines = System.IO.File.ReadAllLines(playlistPath);
+#pragma warning restore CA3003
+
+        // Rewrite only non-comment/non-tag lines (segment filenames) to route through the API
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].StartsWith('#') && lines[i].StartsWith("seg_", StringComparison.Ordinal))
+            {
+                lines[i] = "segments/" + lines[i];
+            }
+        }
+
+        string content = string.Join('\n', lines);
+
+        Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
+        Response.Headers.Append("Pragma", "no-cache");
+        Response.Headers.Append("Access-Control-Allow-Origin", "*");
+
+        return Content(content, "application/vnd.apple.mpegurl");
+    }
+
+    /// <summary>
+    /// Serves an HLS segment for an active recording.
+    /// Anonymous access allowed — the timer ID acts as an unguessable access token.
+    /// </summary>
+    /// <param name="timerId">The timer ID of the recording.</param>
+    /// <param name="filename">The segment filename.</param>
+    /// <returns>The .ts segment file.</returns>
+    [AllowAnonymous]
+    [HttpGet("Recordings/{timerId}/segments/{filename}")]
+    public ActionResult GetRecordingSegment(string timerId, string filename)
+    {
+        // Sanitize filename to prevent path traversal
+        if (filename.Contains("..", StringComparison.Ordinal)
+            || filename.Contains('/', StringComparison.Ordinal)
+            || filename.Contains('\\', StringComparison.Ordinal))
+        {
+            return BadRequest("Invalid filename");
+        }
+
+        // timerId is validated via GetHlsDirectory (dictionary lookup of known active recordings).
+        // filename is sanitized above.
+#pragma warning disable CA3003
+        string? hlsDir = recordingEngine.GetHlsDirectory(timerId);
+        if (hlsDir == null || !Directory.Exists(hlsDir))
+        {
+            return NotFound("Recording not active or not found");
+        }
+
+        string segmentPath = Path.Combine(hlsDir, filename);
+        if (!System.IO.File.Exists(segmentPath))
+        {
+            return NotFound("Segment not found");
+        }
+
+        return PhysicalFile(segmentPath, "video/MP2T");
+#pragma warning restore CA3003
     }
 }
