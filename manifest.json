@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- Record to HLS format (m3u8 + ts segments) for seekable, growing in-progress playback\n- New API endpoints for HLS streaming\n- .strm file created during recording for Jellyfin library integration\n- HLS segments merged to MKV after recording completes\n- Cleanup of orphaned recording artifacts on startup\n- Works on iPhone, Android TV, and web",
+        "checksum": "1fc3dfbcf7c3ed840e091b501f8ef409",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.11/jellyfin-xtream_0.9.11.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-23T17:41:09Z",
+        "version": "0.9.11.0"
+      },
+      {
         "changelog": "## Changes\n\n- Stop registering recordings with Jellyfin's internal active recordings tracker\n- This prevents Jellyfin from treating in-progress recordings as infinite live streams\n- Recordings are now served as normal video files — seekable, direct-playable, compatible with Android TV\n- MPEG-TS format ensures the file is readable while still being written",
         "checksum": "fc68359c7681323fc8ecf212955289af",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.10/jellyfin-xtream_0.9.10.0.zip",
