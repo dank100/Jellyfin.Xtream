@@ -252,17 +252,18 @@ public class RecordingEngine : IHostedService, IDisposable
             .Replace('/', '-')
             .Replace('\\', '-');
 
-        // Each recording gets its own subdirectory for HLS segments
+        // TS file goes directly in recordings dir so Jellyfin picks it up in the library
+        string tsPath = Path.Combine(RecordingsPath, baseName + ".ts");
+
+        // Each recording also gets a subdirectory for HLS segments (seeking + growing playback)
         string segmentDir = Path.Combine(RecordingsPath, $".rec_{timer.Id}");
         Directory.CreateDirectory(segmentDir);
         string playlistPath = Path.Combine(segmentDir, HlsPlaylistName);
         string segmentPattern = Path.Combine(segmentDir, "seg_%05d.ts");
 
-        // Create a .strm file in the recordings directory so Jellyfin picks it up
-        string strmPath = Path.Combine(RecordingsPath, baseName + ".strm");
         string hlsApiUrl = $"{_appHost.GetSmartApiUrl(IPAddress.Any)}/Xtream/Recordings/{timer.Id}/stream.m3u8";
 
-        _logger.LogInformation("Recording started: {Name} -> {Path}", timer.Name, segmentDir);
+        _logger.LogInformation("Recording started: {Name} -> {TsPath}", timer.Name, tsPath);
         _logger.LogInformation("HLS playback URL: {Url}", hlsApiUrl);
         recording.FilePath = segmentDir;
 
@@ -274,12 +275,15 @@ public class RecordingEngine : IHostedService, IDisposable
             StreamService.FromGuid(guid, out int _, out int streamId, out int _, out int _);
             string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{streamId}";
 
+            // Dual output: TS file for Jellyfin library + HLS segments for seeking/growing playback
             var ffmpegPath = GetFfmpegPath();
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
                 Arguments = $"-i \"{url}\" -map 0 -dn -sn -ignore_unknown -fflags +genpts+igndts"
                     + " -c:v copy -c:a aac -b:a 192k"
+                    + $" -f mpegts -y \"{tsPath}\""
+                    + " -map 0 -dn -sn -c:v copy -c:a aac -b:a 192k"
                     + $" -f hls -hls_time 6 -hls_playlist_type event -hls_list_size 0"
                     + $" -hls_segment_type mpegts -hls_flags append_list+program_date_time"
                     + $" -hls_segment_filename \"{segmentPattern}\" -y \"{playlistPath}\"",
@@ -299,7 +303,7 @@ public class RecordingEngine : IHostedService, IDisposable
             using var process = Process.Start(psi)
                 ?? throw new InvalidOperationException("Failed to start ffmpeg process");
 
-            // Ask ffmpeg to quit cleanly so the HLS playlist is finalized.
+            // Ask ffmpeg to quit cleanly so the streams are flushed.
             recording.CancellationToken.Register(() =>
             {
                 try
@@ -339,7 +343,7 @@ public class RecordingEngine : IHostedService, IDisposable
                 }
             });
 
-            // Wait for the first segment, then create the .strm file and notify the library
+            // Wait for the TS file to appear, then notify the library
             _ = Task.Run(async () =>
             {
                 try
@@ -347,12 +351,11 @@ public class RecordingEngine : IHostedService, IDisposable
                     for (int i = 0; i < 30; i++)
                     {
                         await Task.Delay(1000, recording.CancellationToken).ConfigureAwait(false);
-                        if (File.Exists(playlistPath) && new FileInfo(playlistPath).Length > 0)
+                        if (File.Exists(tsPath) && new FileInfo(tsPath).Length > 0)
                         {
-                            await File.WriteAllTextAsync(strmPath, hlsApiUrl, recording.CancellationToken).ConfigureAwait(false);
-                            _libraryMonitor.ReportFileSystemChanged(strmPath);
+                            _libraryMonitor.ReportFileSystemChanged(tsPath);
                             TriggerMediaScan();
-                            _logger.LogInformation("Library notified of new recording: {Path}", strmPath);
+                            _logger.LogInformation("Library notified of new recording: {Path}", tsPath);
                             return;
                         }
                     }
@@ -383,20 +386,13 @@ public class RecordingEngine : IHostedService, IDisposable
             _servableHlsDirs[timer.Id] = segmentDir;
             _activeRecordings.TryRemove(timer.Id, out _);
 
-            // Remove the .strm file first
-            if (File.Exists(strmPath))
-            {
-                File.Delete(strmPath);
-                _libraryMonitor.ReportFileSystemChanged(strmPath);
-            }
-
             if (File.Exists(playlistPath))
             {
                 // Merge HLS segments into a single MKV
                 string mkvPath = Path.Combine(RecordingsPath, baseName + FinalExtension);
                 string completedPath = await MergeHlsToMkvAsync(playlistPath, mkvPath).ConfigureAwait(false);
 
-                // Remove from servable dirs and clean up the segment directory
+                // Remove from servable dirs and clean up the segment directory + TS file
                 _servableHlsDirs.TryRemove(timer.Id, out _);
                 try
                 {
@@ -405,6 +401,11 @@ public class RecordingEngine : IHostedService, IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to clean up segment directory: {Dir}", segmentDir);
+                }
+
+                if (File.Exists(tsPath))
+                {
+                    File.Delete(tsPath);
                 }
 
                 timer.Status = RecordingStatus.Completed;
