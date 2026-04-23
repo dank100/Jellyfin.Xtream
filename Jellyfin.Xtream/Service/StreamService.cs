@@ -91,6 +91,11 @@ public partial class StreamService(IXtreamClient xtreamClient)
     /// </summary>
     public const int EpgPrefix = 0x5d774c3f;
 
+    /// <summary>
+    /// The id prefix for virtual recording channels.
+    /// </summary>
+    public const int RecordingPrefix = 0x5d774c40;
+
     private static readonly Regex _tagRegex = TagRegex();
 
     /// <summary>

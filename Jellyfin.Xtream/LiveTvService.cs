@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -29,6 +30,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Xtream;
@@ -46,16 +48,25 @@ namespace Jellyfin.Xtream;
 /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
 /// <param name="timerStore">Instance of the <see cref="TimerStore"/> class.</param>
 /// <param name="xmltvParser">Instance of the <see cref="XmltvParser"/> class.</param>
-public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger<LiveTvService> logger, IMemoryCache memoryCache, IXtreamClient xtreamClient, TimerStore timerStore, XmltvParser xmltvParser) : ILiveTvService, ISupportsDirectStreamProvider
+/// <param name="serviceProvider">Instance of the <see cref="IServiceProvider"/> interface.</param>
+public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory httpClientFactory, ILogger<LiveTvService> logger, IMemoryCache memoryCache, IXtreamClient xtreamClient, TimerStore timerStore, XmltvParser xmltvParser, IServiceProvider serviceProvider) : ILiveTvService, ISupportsDirectStreamProvider
 {
     private readonly Dictionary<string, TimerInfo> _timers = timerStore.LoadTimers();
     private readonly Dictionary<string, SeriesTimerInfo> _seriesTimers = timerStore.LoadSeriesTimers();
+
+    // Maps recording channel GUIDs to timer IDs for reverse lookup
+    private readonly Dictionary<string, string> _recordingChannelMap = new();
+
+    // Lazy to break circular dependency (RecordingEngine → LiveTvService → RecordingEngine)
+    private RecordingEngine? _recordingEngine;
 
     /// <inheritdoc />
     public string Name => "Xtream Live";
 
     /// <inheritdoc />
     public string HomePageUrl => string.Empty;
+
+    private RecordingEngine RecordingEngine => _recordingEngine ??= serviceProvider.GetRequiredService<RecordingEngine>();
 
     /// <summary>
     /// Gets a snapshot of current timers for the recording engine.
@@ -102,6 +113,25 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 ImageUrl = channel.StreamIcon,
                 Name = parsed.Title,
                 Tags = parsed.Tags,
+            });
+        }
+
+        // Append virtual channels for active recordings
+        _recordingChannelMap.Clear();
+        int recIndex = 0;
+        foreach (var rec in RecordingEngine.GetReadyRecordingsSnapshot())
+        {
+            recIndex++;
+            // Use a deterministic hash of the timer ID for the GUID encoding
+            int timerHash = rec.Timer.Id.GetHashCode(StringComparison.Ordinal);
+            string channelId = StreamService.ToGuid(StreamService.RecordingPrefix, timerHash, 0, 0).ToString();
+            _recordingChannelMap[channelId] = rec.Timer.Id;
+
+            items.Add(new ChannelInfo()
+            {
+                Id = channelId,
+                Number = $"0.{recIndex}",
+                Name = $"\u25cf REC: {rec.Timer.Name}",
             });
         }
 
@@ -231,6 +261,12 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <inheritdoc />
     public async Task<IEnumerable<ProgramInfo>> GetProgramsAsync(string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
     {
+        // Handle virtual recording channels
+        if (_recordingChannelMap.TryGetValue(channelId, out string? timerId))
+        {
+            return GetRecordingPrograms(channelId, timerId, startDateUtc, endDateUtc);
+        }
+
         Guid guid = Guid.Parse(channelId);
         StreamService.FromGuid(guid, out int prefix, out int streamId, out int _, out int _);
         if (prefix != StreamService.LiveTvPrefix)
@@ -313,6 +349,29 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <inheritdoc />
     public async Task<ILiveStream> GetChannelStreamWithDirectStreamProvider(string channelId, string streamId, List<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
     {
+        // Check if this is a virtual recording channel
+        if (_recordingChannelMap.TryGetValue(channelId, out string? timerId))
+        {
+            string? tsPath = RecordingEngine.GetTsFilePath(timerId);
+            if (tsPath == null)
+            {
+                throw new FileNotFoundException($"Recording TS file not found for timer {timerId}");
+            }
+
+            // Reuse an existing stream if another consumer is already watching
+            ILiveStream? existing = currentLiveStreams.Find(s => s.TunerHostId == RecordingRestream.TunerHost && s.MediaSource.Id == $"recording_{timerId}");
+            if (existing != null)
+            {
+                existing.ConsumerCount++;
+                return existing;
+            }
+
+            var recStream = new RecordingRestream(appHost, logger, tsPath, timerId, () => RecordingEngine.IsRecordingActive(timerId));
+            await recStream.Open(cancellationToken).ConfigureAwait(false);
+            recStream.ConsumerCount++;
+            return recStream;
+        }
+
         Guid guid = Guid.Parse(channelId);
         StreamService.FromGuid(guid, out int prefix, out int channel, out int _, out int _);
         if (prefix != StreamService.LiveTvPrefix)
@@ -369,5 +428,45 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         return myTz.GetUtcOffset(now) - epgTz.GetUtcOffset(now);
+    }
+
+    /// <summary>
+    /// Returns a single EPG entry for a virtual recording channel, spanning the timer's scheduled time.
+    /// </summary>
+    private IEnumerable<ProgramInfo> GetRecordingPrograms(string channelId, string timerId, DateTime startDateUtc, DateTime endDateUtc)
+    {
+        TimerInfo? timer;
+        lock (_timers)
+        {
+            _timers.TryGetValue(timerId, out timer);
+        }
+
+        if (timer == null)
+        {
+            return [];
+        }
+
+        var start = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
+        var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
+
+        if (end < startDateUtc || start >= endDateUtc)
+        {
+            return [];
+        }
+
+        int timerHash = timerId.GetHashCode(StringComparison.Ordinal);
+        return
+        [
+            new ProgramInfo()
+            {
+                Id = StreamService.ToGuid(StreamService.RecordingPrefix, timerHash, 1, 0).ToString(),
+                ChannelId = channelId,
+                StartDate = start,
+                EndDate = end,
+                Name = timer.Name,
+                Overview = $"Recording in progress: {timer.Name}",
+                IsLive = true,
+            }
+        ];
     }
 }
