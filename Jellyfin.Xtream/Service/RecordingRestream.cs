@@ -81,7 +81,7 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
     public string TunerHostId => TunerHost;
 
     /// <inheritdoc />
-    public bool EnableStreamSharing => true;
+    public bool EnableStreamSharing => false;
 
     /// <inheritdoc />
     public MediaSourceInfo MediaSource { get; set; }
