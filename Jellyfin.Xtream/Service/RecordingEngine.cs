@@ -249,19 +249,19 @@ public class RecordingEngine : IHostedService, IDisposable
     private async Task RecordStreamAsync(ActiveRecording recording)
     {
         var timer = recording.Timer;
-        string baseName = $"{timer.Name}_{timer.StartDate:yyyyMMdd_HHmmss}"
+        string baseName = $"{timer.Name}_{timer.StartDate:yyyyMMdd}_{timer.StartDate:HH.mm}-{timer.EndDate:HH.mm}"
             .Replace(' ', '_')
             .Replace('/', '-')
             .Replace('\\', '-');
 
-        // TS file written by ffmpeg (grows continuously during recording)
-        string tsPath = Path.Combine(RecordingsPath, baseName + ".ts");
-
-        // Each recording also gets a subdirectory for HLS segments (seeking + growing playback)
+        // Each recording gets a hidden subdirectory for HLS segments + the growing TS file
         string segmentDir = Path.Combine(RecordingsPath, $".rec_{timer.Id}");
         Directory.CreateDirectory(segmentDir);
         string playlistPath = Path.Combine(segmentDir, HlsPlaylistName);
         string segmentPattern = Path.Combine(segmentDir, "seg_%05d.ts");
+
+        // TS file goes in the hidden segment directory so Jellyfin doesn't pick it up as a library item
+        string tsPath = Path.Combine(segmentDir, "recording.ts");
 
         // .strm file points to our growing TS endpoint so Jellyfin plays a continuous stream
         string strmPath = Path.Combine(RecordingsPath, baseName + ".strm");
@@ -587,6 +587,13 @@ public class RecordingEngine : IHostedService, IDisposable
             {
                 _logger.LogInformation("Cleaning up orphaned .strm file: {Path}", strmFile);
                 File.Delete(strmFile);
+            }
+
+            // Remove orphaned .ts files from previous plugin versions that stored them in the root
+            foreach (string tsFile in Directory.GetFiles(recPath, "*.ts"))
+            {
+                _logger.LogInformation("Cleaning up orphaned .ts file: {Path}", tsFile);
+                File.Delete(tsFile);
             }
 
             // Remove orphaned .rec_* segment directories
