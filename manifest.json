@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "### Changes\n- **Seekable recording channels**: Virtual LiveTV channels now use HLS direct play instead of raw TS pipe. Clients play the m3u8 playlist natively (HLS.js on web, ExoPlayer on Android, AVPlayer on iOS) with full seeking support.\n- **Guide auto-refresh**: Channel list and guide refresh automatically when recordings start and stop. Virtual `● REC:` channels appear within seconds.\n- **CORS fix**: Added Access-Control-Allow-Origin header to HLS segment endpoint.\n- `IsInfiniteStream = false` — clients get a proper seek bar.\n\n### How it works\nThe recording channel MediaSource points directly at the HLS playlist API URL. No IDirectStreamProvider (no raw byte pipe). The client's native HLS player handles seeking across segments.",
+        "checksum": "3e5c2987caccaa8a86af7df7b835d25f",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.17/jellyfin-xtream_0.9.17.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-23T19:31:46Z",
+        "version": "0.9.17.0"
+      },
+      {
         "changelog": "Fix: Recording streams now start from the beginning of the file instead of jumping to the live edge.\n\nChanged `EnableStreamSharing` to `false` so each consumer gets their own independent `TailingFileStream` starting from byte 0.",
         "checksum": "a4b654e13fa200e53e4555fa10da3807",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.16/jellyfin-xtream_0.9.16.0.zip",
