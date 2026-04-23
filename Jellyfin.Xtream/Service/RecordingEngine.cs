@@ -348,6 +348,7 @@ public class RecordingEngine : IHostedService, IDisposable
                         if (File.Exists(filePath) && new FileInfo(filePath).Length > 0)
                         {
                             _libraryMonitor.ReportFileSystemChanged(filePath);
+                            TriggerMediaScan();
                             _logger.LogInformation("Library notified of new recording: {Path}", filePath);
                             return;
                         }
@@ -397,6 +398,7 @@ public class RecordingEngine : IHostedService, IDisposable
                 };
                 _logger.LogInformation("Recording completed: {Name} ({Size} bytes)", timer.Name, new FileInfo(completedPath).Length);
                 _libraryMonitor.ReportFileSystemChanged(completedPath);
+                TriggerMediaScan();
             }
             else
             {
@@ -449,6 +451,20 @@ public class RecordingEngine : IHostedService, IDisposable
         }
 
         return tsPath;
+    }
+
+    private void TriggerMediaScan()
+    {
+        try
+        {
+            Plugin.Instance.TaskService.CancelIfRunningAndQueue(
+                "Emby.Server.Implementations",
+                "Emby.Server.Implementations.ScheduledTasks.Tasks.RefreshMediaLibraryTask");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to trigger media library scan");
+        }
     }
 
     private static string GetFfmpegPath()
