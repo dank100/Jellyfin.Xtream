@@ -308,6 +308,7 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             return NotFound("Segment not found");
         }
 
+        Response.Headers.Append("Access-Control-Allow-Origin", "*");
         return PhysicalFile(segmentPath, "video/MP2T");
 #pragma warning restore CA3003
     }

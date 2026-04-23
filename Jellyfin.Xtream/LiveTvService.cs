@@ -352,10 +352,10 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         // Check if this is a virtual recording channel
         if (_recordingChannelMap.TryGetValue(channelId, out string? timerId))
         {
-            string? tsPath = RecordingEngine.GetTsFilePath(timerId);
-            if (tsPath == null)
+            string? hlsDir = RecordingEngine.GetHlsDirectory(timerId);
+            if (hlsDir == null)
             {
-                throw new FileNotFoundException($"Recording TS file not found for timer {timerId}");
+                throw new FileNotFoundException($"Recording HLS directory not found for timer {timerId}");
             }
 
             // Reuse an existing stream if another consumer is already watching
@@ -366,7 +366,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 return existing;
             }
 
-            var recStream = new RecordingRestream(appHost, logger, tsPath, timerId, () => RecordingEngine.IsRecordingActive(timerId));
+            var recStream = new RecordingRestream(appHost, logger, timerId);
             await recStream.Open(cancellationToken).ConfigureAwait(false);
             recStream.ConsumerCount++;
             return recStream;

@@ -15,7 +15,6 @@
 
 using System;
 using System.IO;
-using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller;
@@ -27,10 +26,11 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Xtream.Service;
 
 /// <summary>
-/// A live stream backed by a growing recording file on disk.
-/// Each call to <see cref="GetStream"/> opens an independent reader that tails the file.
+/// A live stream that points clients at the HLS playlist for an active recording.
+/// Does NOT implement IDirectStreamProvider — the client plays the HLS URL directly,
+/// which gives native seeking support on all platforms (HLS.js, ExoPlayer, AVPlayer).
 /// </summary>
-public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
+public class RecordingRestream : ILiveStream, IDisposable
 {
     /// <summary>
     /// The global constant for the recording restream tuner host.
@@ -38,34 +38,34 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
     public const string TunerHost = "Xtream-Recording";
 
     private readonly ILogger _logger;
-    private readonly string _tsFilePath;
-    private readonly Func<bool> _isStillGrowing;
+    private readonly string _timerId;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RecordingRestream"/> class.
     /// </summary>
     /// <param name="appHost">Instance of the <see cref="IServerApplicationHost"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
-    /// <param name="tsFilePath">Path to the growing .ts file.</param>
     /// <param name="timerId">The timer ID for this recording.</param>
-    /// <param name="isStillGrowing">Delegate returning true while the recording is in progress.</param>
-    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string tsFilePath, string timerId, Func<bool> isStillGrowing)
+    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId)
     {
         _logger = logger;
-        _tsFilePath = tsFilePath;
-        _isStillGrowing = isStillGrowing;
+        _timerId = timerId;
 
         UniqueId = Guid.NewGuid().ToString();
 
-        string path = $"/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
+        string hlsUrl = $"{appHost.GetSmartApiUrl(System.Net.IPAddress.Any)}/Xtream/Recordings/{timerId}/playlist.m3u8";
+        string hlsUrlLocal = $"{appHost.GetApiUrlForLocalAccess()}/Xtream/Recordings/{timerId}/playlist.m3u8";
         MediaSource = new MediaSourceInfo
         {
             Id = $"recording_{timerId}",
-            Path = appHost.GetSmartApiUrl(IPAddress.Any) + path,
-            EncoderPath = appHost.GetApiUrlForLocalAccess() + path,
+            Path = hlsUrl,
+            EncoderPath = hlsUrlLocal,
             Protocol = MediaProtocol.Http,
-            IsInfiniteStream = true,
-            Container = "ts",
+            Container = "hls",
+            SupportsDirectPlay = true,
+            SupportsDirectStream = false,
+            SupportsTranscoding = false,
+            IsInfiniteStream = false,
         };
 
         OriginalStreamId = MediaSource.Id;
@@ -92,22 +92,22 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
     /// <inheritdoc />
     public Task Open(CancellationToken openCancellationToken)
     {
-        _logger.LogInformation("Opening recording restream for {Path}", _tsFilePath);
+        _logger.LogInformation("Opening recording HLS stream for timer {TimerId}", _timerId);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task Close()
     {
-        _logger.LogInformation("Closing recording restream for {Path}", _tsFilePath);
+        _logger.LogInformation("Closing recording HLS stream for timer {TimerId}", _timerId);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Stream GetStream()
     {
-        _logger.LogInformation("Opening recording tail reader {Count} for {Path}", ConsumerCount, _tsFilePath);
-        return new TailingFileStream(_tsFilePath, _isStillGrowing);
+        // Not used — clients play the HLS URL directly from MediaSource.Path.
+        throw new NotSupportedException("Recording streams use HLS direct play, not GetStream().");
     }
 
     /// <summary>
@@ -116,7 +116,7 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
     /// <param name="disposing">Whether to dispose managed resources.</param>
     protected virtual void Dispose(bool disposing)
     {
-        // No persistent resources — each consumer's TailingFileStream is independently disposed.
+        // No persistent resources to dispose.
     }
 
     /// <inheritdoc />

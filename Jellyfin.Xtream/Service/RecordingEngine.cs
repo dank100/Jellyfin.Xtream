@@ -358,6 +358,7 @@ public class RecordingEngine : IHostedService, IDisposable
                         {
                             _libraryMonitor.ReportFileSystemChanged(tsPath);
                             TriggerMediaScan();
+                            TriggerGuideRefresh();
                             _logger.LogInformation("Library notified of new recording: {Path}", tsPath);
                             return;
                         }
@@ -437,6 +438,7 @@ public class RecordingEngine : IHostedService, IDisposable
                 _logger.LogInformation("Recording completed: {Name} ({Size} bytes)", timer.Name, new FileInfo(completedPath).Length);
                 _libraryMonitor.ReportFileSystemChanged(completedPath);
                 TriggerMediaScan();
+                TriggerGuideRefresh();
             }
             else
             {
@@ -573,6 +575,23 @@ public class RecordingEngine : IHostedService, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to trigger media library scan");
+        }
+    }
+
+    private void TriggerGuideRefresh()
+    {
+        try
+        {
+            Plugin.Instance.TaskService.CancelIfRunningAndQueue(
+                "Jellyfin.LiveTv",
+                "Jellyfin.LiveTv.Channels.RefreshChannelsScheduledTask");
+            Plugin.Instance.TaskService.CancelIfRunningAndQueue(
+                "Jellyfin.LiveTv",
+                "Jellyfin.LiveTv.Guide.RefreshGuideScheduledTask");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to trigger guide refresh");
         }
     }
 
