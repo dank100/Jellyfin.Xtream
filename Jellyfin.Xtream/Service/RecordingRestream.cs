@@ -53,8 +53,8 @@ public class RecordingRestream : ILiveStream, IDisposable
 
         UniqueId = Guid.NewGuid().ToString();
 
-        string hlsUrl = $"{appHost.GetSmartApiUrl(System.Net.IPAddress.Any)}/Xtream/Recordings/{timerId}/playlist.m3u8";
-        string hlsUrlLocal = $"{appHost.GetApiUrlForLocalAccess()}/Xtream/Recordings/{timerId}/playlist.m3u8";
+        string hlsUrl = $"{appHost.GetSmartApiUrl(System.Net.IPAddress.Any)}/Xtream/Recordings/{timerId}/stream.m3u8";
+        string hlsUrlLocal = $"{appHost.GetApiUrlForLocalAccess()}/Xtream/Recordings/{timerId}/stream.m3u8";
         MediaSource = new MediaSourceInfo
         {
             Id = $"recording_{timerId}",
