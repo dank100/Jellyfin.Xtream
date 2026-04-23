@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix duplicate library entries and stream termination\n\n- Move growing TS file into hidden .rec_* directory (only .strm visible in library)\n- Clean up orphaned .ts files from previous versions on startup\n- EPG time window in filenames (e.g. Show_20260423_20.00-20.44)",
+        "checksum": "541e183ad3805032318e7e27ce1e30b9",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.14/jellyfin-xtream_0.9.14.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-23T18:34:45Z",
+        "version": "0.9.14.0"
+      },
+      {
         "changelog": "Growing TS stream endpoint for continuous recording playback\n\n- Recordings now use a .strm file pointing to a growing TS stream endpoint\n- Stream continues growing while watching (no more termination at playback start)\n- Fixed cleanup order and merge-failure handling\n- Improved file drain logic and reduced poll interval\n- Windows compatibility fix (FileShare.Delete)",
         "checksum": "46a3304cbfabf342ad51f0343177d3dc",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.13/jellyfin-xtream_0.9.13.0.zip",
