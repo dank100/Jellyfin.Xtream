@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- Stop registering recordings with Jellyfin's internal active recordings tracker\n- This prevents Jellyfin from treating in-progress recordings as infinite live streams\n- Recordings are now served as normal video files — seekable, direct-playable, compatible with Android TV\n- MPEG-TS format ensures the file is readable while still being written",
+        "checksum": "fc68359c7681323fc8ecf212955289af",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.10/jellyfin-xtream_0.9.10.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-23T17:14:15Z",
+        "version": "0.9.10.0"
+      },
+      {
         "changelog": "## Changes\n\n- Record to MPEG-TS (.ts) instead of MKV for better in-progress playback and seeking\n- Add -sn to exclude subtitle streams (unsupported in MPEG-TS)\n- Remux to MKV after recording completes for better library support\n- Trigger media library scan when a recording starts and finishes so new recordings appear promptly",
         "checksum": "1e78516cb54e658648647d6f831f604b",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.9/jellyfin-xtream_0.9.9.0.zip",
