@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Fix recording playback URL mismatch\n\n**Bug:** `RecordingRestream` constructed HLS URLs as `/playlist.m3u8` but the API controller serves at `/stream.m3u8`. This caused ffmpeg exit code 8 when clients tried to watch active recordings via the virtual recording channel.\n\n**Fix:** Aligned URLs to `/stream.m3u8` in `RecordingRestream.cs`.",
+        "checksum": "f64ad01808ff3205ead104e03b6690a5",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.18.0/jellyfin-xtream_0.9.18.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-24T05:07:38Z",
+        "version": "0.9.18.0"
+      },
+      {
         "changelog": "### Changes\n- **Seekable recording channels**: Virtual LiveTV channels now use HLS direct play instead of raw TS pipe. Clients play the m3u8 playlist natively (HLS.js on web, ExoPlayer on Android, AVPlayer on iOS) with full seeking support.\n- **Guide auto-refresh**: Channel list and guide refresh automatically when recordings start and stop. Virtual `● REC:` channels appear within seconds.\n- **CORS fix**: Added Access-Control-Allow-Origin header to HLS segment endpoint.\n- `IsInfiniteStream = false` — clients get a proper seek bar.\n\n### How it works\nThe recording channel MediaSource points directly at the HLS playlist API URL. No IDirectStreamProvider (no raw byte pipe). The client's native HLS player handles seeking across segments.",
         "checksum": "3e5c2987caccaa8a86af7df7b835d25f",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.17/jellyfin-xtream_0.9.17.0.zip",
