@@ -465,11 +465,15 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             return [];
         }
 
-        // Use the actual recording start time (when ffmpeg began capturing)
-        // and cap the end at "now" so the seekbar only covers available content.
+        // Use the actual recording start time so the seekbar begins at
+        // the real capture start. Keep the scheduled end time for EndDate
+        // because EPG data is cached — setting EndDate=UtcNow goes stale
+        // immediately and the programme disappears from the guide.
+        // The seekbar shows the full programme but the playhead positions
+        // at the live edge; HLS.js cannot seek past available content.
         var activeRec = RecordingEngine.GetActiveRecording(timerId);
         var start = activeRec?.StartedUtc ?? timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
-        var end = DateTime.UtcNow;
+        var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
 
         if (end < startDateUtc || start >= endDateUtc)
         {
