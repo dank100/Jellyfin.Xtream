@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "- Constrain recording seekbar to actual recorded content (StartDate=capture start, EndDate=now)\n- Fix multiplexer: always run background loop so enabling via config works without restart\n- Auto-detect max connections from IPTV provider API (lazy fetch)\n- Remove MaxActiveConnections from config UI",
+        "checksum": "5d772d7de9e3193b7baa1c2257ae60df",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.31.0/jellyfin-xtream_0.9.31.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-24T17:14:48Z",
+        "version": "0.9.31.0"
+      },
+      {
         "changelog": "## Fixes\n\n**Multiplexer:**\n- Fix 406 error on playlist endpoint — removed `[Produces]` attribute that blocked ASP.NET from serving the HLS playlist. This caused ffmpeg to exit with code 8.\n\n**Recording seekbar:**\n- Serve ffmpeg EVENT playlist as-is (no more `#EXT-X-ENDLIST` injection)\n- HLS.js now treats recording as live → positions at live edge, matching the Jellyfin guide overlay\n- All segments from the beginning are available for backward seeking\n- Use actual schedule times for programme (not stale `DateTime.UtcNow`)",
         "checksum": "741769dff374c382a8f1d3c4e95dfade",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.30.0/jellyfin-xtream_0.9.30.0.zip",
