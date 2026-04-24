@@ -366,7 +366,14 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 return existing;
             }
 
-            var recStream = new RecordingRestream(appHost, logger, timerId);
+            // Look up the timer to provide duration info for the seekbar
+            TimerInfo? timer;
+            lock (_timers)
+            {
+                _timers.TryGetValue(timerId, out timer);
+            }
+
+            var recStream = new RecordingRestream(appHost, logger, timerId, timer);
             await recStream.Open(cancellationToken).ConfigureAwait(false);
             recStream.ConsumerCount++;
             return recStream;

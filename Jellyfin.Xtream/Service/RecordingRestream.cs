@@ -19,6 +19,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.MediaInfo;
 using Microsoft.Extensions.Logging;
@@ -46,7 +47,8 @@ public class RecordingRestream : ILiveStream, IDisposable
     /// <param name="appHost">Instance of the <see cref="IServerApplicationHost"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
     /// <param name="timerId">The timer ID for this recording.</param>
-    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId)
+    /// <param name="timer">The timer info with schedule times, or null if unavailable.</param>
+    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, TimerInfo? timer = null)
     {
         _logger = logger;
         _timerId = timerId;
@@ -55,6 +57,17 @@ public class RecordingRestream : ILiveStream, IDisposable
 
         string hlsUrl = $"{appHost.GetSmartApiUrl(System.Net.IPAddress.Any)}/Xtream/Recordings/{timerId}/stream.m3u8";
         string hlsUrlLocal = $"{appHost.GetApiUrlForLocalAccess()}/Xtream/Recordings/{timerId}/stream.m3u8";
+
+        // Compute total duration from the timer schedule (including padding) so the
+        // player shows an absolute seekbar spanning the full recording window.
+        long? runTimeTicks = null;
+        if (timer != null)
+        {
+            var start = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
+            var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
+            runTimeTicks = (end - start).Ticks;
+        }
+
         MediaSource = new MediaSourceInfo
         {
             Id = $"recording_{timerId}",
@@ -66,6 +79,7 @@ public class RecordingRestream : ILiveStream, IDisposable
             SupportsDirectStream = false,
             SupportsTranscoding = false,
             IsInfiniteStream = false,
+            RunTimeTicks = runTimeTicks,
         };
 
         OriginalStreamId = MediaSource.Id;
