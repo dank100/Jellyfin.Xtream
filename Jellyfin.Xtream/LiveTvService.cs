@@ -453,8 +453,16 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             return [];
         }
 
-        var start = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
-        var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
+        var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
+        var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
+        var totalDuration = scheduledEnd - scheduledStart;
+
+        // Anchor the programme at "now" so the live TV player calculates
+        // position = (now - StartDate) ≈ 0 and the seekbar starts at the beginning.
+        // The TS file is read from byte 0 so this keeps video and seekbar in sync.
+        var now = DateTime.UtcNow;
+        var start = now;
+        var end = now + totalDuration;
 
         if (end < startDateUtc || start >= endDateUtc)
         {
@@ -471,7 +479,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 StartDate = start,
                 EndDate = end,
                 Name = timer.Name,
-                Overview = $"Recording in progress: {timer.Name}",
+                Overview = $"Recording: {timer.Name} (originally {scheduledStart:HH:mm}–{scheduledEnd:HH:mm} UTC)",
                 IsLive = false,
             }
         ];

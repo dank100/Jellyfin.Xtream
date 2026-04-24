@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.9.22.0"
+version: "0.9.23.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -12,5 +12,5 @@ owner: "Kevinjil"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  Fix seekbar time correlation for recording channels. Set IsLive=false on the virtual programme
-  so the player positions at the actual playback offset instead of wall clock time.
+  Fix seekbar sync: anchor recording programme at current time so the live TV player positions at
+  the beginning instead of wall clock offset. Original schedule shown in programme description.
