@@ -455,14 +455,14 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
         var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
         var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
-        var totalDuration = scheduledEnd - scheduledStart;
 
-        // Anchor the programme at "now" so the live TV player calculates
+        // Anchor the programme start at "now" so the live TV player calculates
         // position = (now - StartDate) ≈ 0 and the seekbar starts at the beginning.
-        // The TS file is read from byte 0 so this keeps video and seekbar in sync.
+        // End at the actual scheduled end — don't add full duration on top of "now"
+        // since elapsed recording time is already accounted for.
         var now = DateTime.UtcNow;
         var start = now;
-        var end = now + totalDuration;
+        var end = scheduledEnd;
 
         if (end < startDateUtc || start >= endDateUtc)
         {

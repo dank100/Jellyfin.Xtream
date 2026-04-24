@@ -56,14 +56,18 @@ public class RecordingRestream : ILiveStream, IDisposable
 
         UniqueId = Guid.NewGuid().ToString();
 
-        // Compute total duration from the timer schedule (including padding) so the
-        // player shows a seekbar spanning the full recording window.
+        // Compute remaining duration from the timer schedule (including padding) so the
+        // seekbar spans from now to the scheduled end of the recording.
         long? runTimeTicks = null;
         if (timer != null)
         {
             var start = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
             var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
-            runTimeTicks = (end - start).Ticks;
+            var remaining = end - DateTime.UtcNow;
+            if (remaining.Ticks > 0)
+            {
+                runTimeTicks = remaining.Ticks;
+            }
         }
 
         // Point directly at the growing TS file on disk. This lets ffmpeg:
