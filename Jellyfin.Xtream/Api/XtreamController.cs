@@ -257,37 +257,21 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
 #pragma warning restore CA3003
 
         var result = new List<string>();
-        bool hasEndList = false;
         foreach (string line in lines)
         {
             result.Add(line);
-
-            // After the #EXTM3U header, inject a start-offset tag so players
-            // begin at the first segment instead of the live edge.
-            if (line.StartsWith("#EXTM3U", StringComparison.Ordinal))
-            {
-                result.Add("#EXT-X-START:TIME-OFFSET=0,PRECISE=YES");
-            }
 
             // Rewrite segment filenames to route through the API
             if (!line.StartsWith('#') && line.StartsWith("seg_", StringComparison.Ordinal))
             {
                 result[^1] = "segments/" + line;
             }
-
-            if (line.StartsWith("#EXT-X-ENDLIST", StringComparison.Ordinal))
-            {
-                hasEndList = true;
-            }
         }
 
-        // Force VOD mode so HLS.js starts from position 0 instead of the live edge.
-        // The client will reload the playlist to discover new segments.
-        if (!hasEndList)
-        {
-            result.Add("#EXT-X-ENDLIST");
-        }
-
+        // Serve the ffmpeg EVENT playlist as-is (no #EXT-X-ENDLIST injection).
+        // HLS.js treats it as live → positions at the live edge, matching the
+        // Jellyfin guide overlay which also positions at wall clock "now".
+        // All segments from the beginning are available for backward seeking.
         string content = string.Join('\n', result);
 
         Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -344,7 +328,6 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     /// <returns>The m3u8 playlist file.</returns>
     [AllowAnonymous]
     [HttpGet("Multiplex/{streamId}/playlist.m3u8")]
-    [Produces("application/vnd.apple.mpegurl")]
     public ActionResult GetMultiplexPlaylist(int streamId)
     {
         // streamId is an integer (not free-form user input); buffer paths are controlled by the multiplexer.

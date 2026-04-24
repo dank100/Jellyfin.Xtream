@@ -468,26 +468,12 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
         var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
 
-        // The live TV player positions the seekbar at (now - StartDate).
-        // Anchor StartDate=now so the seekbar starts at 0, matching the
-        // direct-play HLS content which starts from the beginning.
-        // EndDate = now + elapsed recording time, showing only available content.
-        var now = DateTime.UtcNow;
-        var elapsed = now - scheduledStart;
-        if (elapsed < TimeSpan.Zero)
-        {
-            elapsed = TimeSpan.Zero;
-        }
-
-        // Cap at the total scheduled duration
-        var totalDuration = scheduledEnd - scheduledStart;
-        if (elapsed > totalDuration)
-        {
-            elapsed = totalDuration;
-        }
-
-        var start = now;
-        var end = now + elapsed;
+        // Use actual schedule times. The live TV seekbar positions at
+        // (wall clock now - StartDate), which matches HLS.js positioning
+        // at the live edge of the EVENT playlist. All segments from the
+        // beginning are available for backward seeking.
+        var start = scheduledStart;
+        var end = scheduledEnd;
 
         if (end < startDateUtc || start >= endDateUtc)
         {
@@ -504,7 +490,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 StartDate = start,
                 EndDate = end,
                 Name = timer.Name,
-                Overview = $"Recording: {timer.Name} (originally {scheduledStart:HH:mm}–{scheduledEnd:HH:mm} UTC)",
+                Overview = $"Recording: {timer.Name}",
                 IsLive = false,
             }
         ];

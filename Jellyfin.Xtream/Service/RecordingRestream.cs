@@ -59,23 +59,13 @@ public class RecordingRestream : ILiveStream, IDisposable
 
         UniqueId = Guid.NewGuid().ToString();
 
-        // Point directly at the plugin's HLS endpoint which serves a VOD-style
-        // playlist (with #EXT-X-ENDLIST). This makes HLS.js start from position 0
-        // instead of seeking to the live edge.
+        // Point directly at the plugin's HLS endpoint which serves the
+        // ffmpeg EVENT playlist. Without #EXT-X-ENDLIST, HLS.js treats it
+        // as live and positions at the live edge — matching the Jellyfin
+        // guide overlay which also positions at wall clock "now".
+        // All segments from the beginning are available for backward seeking.
         string hlsPath = $"/Xtream/Recordings/{timerId}/stream.m3u8";
         string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
-
-        // Calculate elapsed recording duration for RunTimeTicks
-        long? runTimeTicks = null;
-        if (timer != null)
-        {
-            var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
-            var elapsed = DateTime.UtcNow - scheduledStart;
-            if (elapsed > TimeSpan.Zero)
-            {
-                runTimeTicks = elapsed.Ticks;
-            }
-        }
 
         MediaSource = new MediaSourceInfo
         {
@@ -83,10 +73,8 @@ public class RecordingRestream : ILiveStream, IDisposable
             Path = baseUrl + hlsPath,
             Protocol = MediaProtocol.Http,
             Container = "hls",
-            RunTimeTicks = runTimeTicks,
-            // Direct play forces the client to use our Path URL directly,
-            // bypassing Jellyfin's transcoder (which produces EVENT playlists
-            // that HLS.js treats as live → live edge).
+            // No RunTimeTicks — ensures HLS.js is used (not native HLS).
+            // Direct play bypasses Jellyfin's transcoder.
             SupportsDirectPlay = true,
             SupportsDirectStream = false,
             SupportsTranscoding = false,
