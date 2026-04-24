@@ -43,6 +43,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     private Task? _loopTask;
     private bool _disposed;
     private int _maxConnections = 1;
+    private bool _maxConnectionsFetched;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConnectionMultiplexer"/> class.
@@ -135,35 +136,12 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     }
 
     /// <inheritdoc />
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        PluginConfiguration pluginConfig = Plugin.Instance.Configuration;
-        if (!pluginConfig.EnableMultiplexing)
-        {
-            _logger.LogInformation("Stream multiplexing is disabled");
-            return;
-        }
-
-        // Fetch max connections from the IPTV provider
-        try
-        {
-            var connectionInfo = Plugin.Instance.Creds;
-            var info = await _xtreamClient.GetUserAndServerInfoAsync(connectionInfo, cancellationToken).ConfigureAwait(false);
-            _maxConnections = Math.Max(1, info.UserInfo.MaxConnections);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Could not fetch provider info for max connections, defaulting to {Max}", _maxConnections);
-        }
-
-        _logger.LogInformation(
-            "Starting stream multiplexer (slice={Slice}s, retention={Retention}s, maxConn={MaxConn})",
-            pluginConfig.MultiplexSliceSeconds,
-            pluginConfig.MultiplexRetentionSeconds,
-            _maxConnections);
-
+        _logger.LogInformation("Starting stream multiplexer background loop");
         _cts = new CancellationTokenSource();
         _loopTask = Task.Run(() => RoundRobinLoopAsync(_cts.Token), _cts.Token);
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -234,6 +212,23 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 continue;
             }
 
+            // Lazily fetch max connections on first active subscription
+            if (!_maxConnectionsFetched)
+            {
+                _maxConnectionsFetched = true;
+                try
+                {
+                    var connectionInfo = Plugin.Instance.Creds;
+                    var info = await _xtreamClient.GetUserAndServerInfoAsync(connectionInfo, ct).ConfigureAwait(false);
+                    _maxConnections = Math.Max(1, info.UserInfo.MaxConnections);
+                    _logger.LogInformation("Provider max connections: {MaxConn}", _maxConnections);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not fetch provider info for max connections, defaulting to {Max}", _maxConnections);
+                }
+            }
+
             PluginConfiguration pluginConfig = Plugin.Instance.Configuration;
             int sliceSeconds = Math.Max(1, pluginConfig.MultiplexSliceSeconds);
             int retentionSeconds = Math.Max(10, pluginConfig.MultiplexRetentionSeconds);
@@ -257,7 +252,6 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Error capturing slice for stream {StreamId}", buffer.StreamId);
-                    // Brief pause before trying the next channel
                     await Task.Delay(500, ct).ConfigureAwait(false);
                 }
             }
