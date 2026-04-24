@@ -30,10 +30,9 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Xtream.Service;
 
 /// <summary>
-/// A live stream that points directly at the plugin's own HLS endpoint for an
-/// active recording. By using direct-play with a VOD-style HLS playlist
-/// (containing #EXT-X-ENDLIST), the player starts from the beginning of the
-/// recording instead of the live edge.
+/// A live stream that points at the growing TS file for an active recording.
+/// Using Protocol=File allows the transcoder's ffmpeg to seek anywhere in the
+/// file, enabling backward seeking to the beginning of the recording.
 /// </summary>
 public class RecordingRestream : ILiveStream, IDisposable
 {
@@ -52,51 +51,83 @@ public class RecordingRestream : ILiveStream, IDisposable
     /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
     /// <param name="timerId">The timer ID for this recording.</param>
     /// <param name="timer">The timer info with schedule times, or null if unavailable.</param>
-    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, TimerInfo? timer = null)
+    /// <param name="tsFilePath">Path to the growing TS file, or null to fall back to HLS endpoint.</param>
+    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, TimerInfo? timer = null, string? tsFilePath = null)
     {
         _logger = logger;
         _timerId = timerId;
 
         UniqueId = Guid.NewGuid().ToString();
 
-        // Point directly at the plugin's HLS endpoint which serves the
-        // ffmpeg EVENT playlist. Without #EXT-X-ENDLIST, HLS.js treats it
-        // as live and positions at the live edge — matching the Jellyfin
-        // guide overlay which also positions at wall clock "now".
-        // All segments from the beginning are available for backward seeking.
-        string hlsPath = $"/Xtream/Recordings/{timerId}/stream.m3u8";
-        string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
-
-        MediaSource = new MediaSourceInfo
+        if (!string.IsNullOrEmpty(tsFilePath) && File.Exists(tsFilePath))
         {
-            Id = $"recording_{timerId}",
-            Path = baseUrl + hlsPath,
-            Protocol = MediaProtocol.Http,
-            Container = "hls",
-            // No RunTimeTicks — ensures HLS.js is used (not native HLS).
-            // Direct play bypasses Jellyfin's transcoder.
-            SupportsDirectPlay = true,
-            SupportsDirectStream = false,
-            SupportsTranscoding = false,
-            IsInfiniteStream = false,
-            MediaStreams = new List<MediaStream>
+            // Point directly at the growing TS file on disk.
+            // Protocol=File lets the transcoder's ffmpeg seek to any byte
+            // position, enabling backward seeking to the recording start.
+            MediaSource = new MediaSourceInfo
             {
-                new MediaStream
+                Id = $"recording_{timerId}",
+                Path = tsFilePath,
+                Protocol = MediaProtocol.File,
+                Container = "mpegts",
+                SupportsDirectPlay = false,
+                SupportsDirectStream = false,
+                SupportsTranscoding = true,
+                IsInfiniteStream = true,
+                MediaStreams = new List<MediaStream>
                 {
-                    Type = MediaStreamType.Video,
-                    Index = 0,
-                    Codec = "h264",
-                    IsDefault = true,
+                    new MediaStream
+                    {
+                        Type = MediaStreamType.Video,
+                        Index = 0,
+                        Codec = "h264",
+                        IsDefault = true,
+                    },
+                    new MediaStream
+                    {
+                        Type = MediaStreamType.Audio,
+                        Index = 1,
+                        Codec = "aac",
+                        IsDefault = true,
+                    },
                 },
-                new MediaStream
+            };
+        }
+        else
+        {
+            // Fallback: use plugin HLS endpoint via HTTP
+            string hlsPath = $"/Xtream/Recordings/{timerId}/stream.m3u8";
+            string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
+
+            MediaSource = new MediaSourceInfo
+            {
+                Id = $"recording_{timerId}",
+                Path = baseUrl + hlsPath,
+                Protocol = MediaProtocol.Http,
+                Container = "hls",
+                SupportsDirectPlay = true,
+                SupportsDirectStream = false,
+                SupportsTranscoding = false,
+                IsInfiniteStream = false,
+                MediaStreams = new List<MediaStream>
                 {
-                    Type = MediaStreamType.Audio,
-                    Index = 1,
-                    Codec = "aac",
-                    IsDefault = true,
+                    new MediaStream
+                    {
+                        Type = MediaStreamType.Video,
+                        Index = 0,
+                        Codec = "h264",
+                        IsDefault = true,
+                    },
+                    new MediaStream
+                    {
+                        Type = MediaStreamType.Audio,
+                        Index = 1,
+                        Codec = "aac",
+                        IsDefault = true,
+                    },
                 },
-            },
-        };
+            };
+        }
 
         OriginalStreamId = MediaSource.Id;
     }
