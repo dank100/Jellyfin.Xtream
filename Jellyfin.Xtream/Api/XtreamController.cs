@@ -38,7 +38,7 @@ namespace Jellyfin.Xtream.Api;
 [ApiController]
 [Route("[controller]")]
 [Produces(MediaTypeNames.Application.Json)]
-public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParser, RecordingEngine recordingEngine) : ControllerBase
+public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParser, RecordingEngine recordingEngine, ConnectionMultiplexer connectionMultiplexer) : ControllerBase
 {
     private static CategoryResponse CreateCategoryResponse(Category category) =>
         new()
@@ -326,6 +326,84 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
         }
 
         string segmentPath = Path.Combine(hlsDir, filename);
+        if (!System.IO.File.Exists(segmentPath))
+        {
+            return NotFound("Segment not found");
+        }
+
+        Response.Headers.Append("Access-Control-Allow-Origin", "*");
+        return PhysicalFile(segmentPath, "video/MP2T");
+#pragma warning restore CA3003
+    }
+
+    /// <summary>
+    /// Serves the HLS playlist for a multiplexed channel.
+    /// Anonymous access allowed — stream ID acts as an access token.
+    /// </summary>
+    /// <param name="streamId">The Xtream stream ID.</param>
+    /// <returns>The m3u8 playlist file.</returns>
+    [AllowAnonymous]
+    [HttpGet("Multiplex/{streamId}/playlist.m3u8")]
+    [Produces("application/vnd.apple.mpegurl")]
+    public ActionResult GetMultiplexPlaylist(int streamId)
+    {
+        // streamId is an integer (not free-form user input); buffer paths are controlled by the multiplexer.
+#pragma warning disable CA3003
+        var buffer = connectionMultiplexer.GetBuffer(streamId);
+        if (buffer == null || !System.IO.File.Exists(buffer.PlaylistPath))
+        {
+            return NotFound("Channel not active in multiplexer");
+        }
+
+        string content = System.IO.File.ReadAllText(buffer.PlaylistPath);
+#pragma warning restore CA3003
+
+        // Rewrite segment filenames to route through the API
+        var lines = content.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].StartsWith('#') && lines[i].StartsWith("seg_", StringComparison.Ordinal))
+            {
+                lines[i] = $"segments/{lines[i]}";
+            }
+        }
+
+        content = string.Join('\n', lines);
+
+        Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
+        Response.Headers.Append("Pragma", "no-cache");
+        Response.Headers.Append("Access-Control-Allow-Origin", "*");
+
+        return Content(content, "application/vnd.apple.mpegurl");
+    }
+
+    /// <summary>
+    /// Serves an HLS segment for a multiplexed channel.
+    /// Anonymous access allowed — stream ID acts as an access token.
+    /// </summary>
+    /// <param name="streamId">The Xtream stream ID.</param>
+    /// <param name="filename">The segment filename.</param>
+    /// <returns>The .ts segment file.</returns>
+    [AllowAnonymous]
+    [HttpGet("Multiplex/{streamId}/segments/{filename}")]
+    public ActionResult GetMultiplexSegment(int streamId, string filename)
+    {
+        if (filename.Contains("..", StringComparison.Ordinal)
+            || filename.Contains('/', StringComparison.Ordinal)
+            || filename.Contains('\\', StringComparison.Ordinal))
+        {
+            return BadRequest("Invalid filename");
+        }
+
+        // filename is sanitized above; streamId is an integer.
+#pragma warning disable CA3003
+        var buffer = connectionMultiplexer.GetBuffer(streamId);
+        if (buffer == null)
+        {
+            return NotFound("Channel not active in multiplexer");
+        }
+
+        string segmentPath = Path.Combine(buffer.SegmentDir, filename);
         if (!System.IO.File.Exists(segmentPath))
         {
             return NotFound("Segment not found");

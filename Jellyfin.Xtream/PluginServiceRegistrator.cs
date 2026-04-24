@@ -42,5 +42,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IPreRefreshProvider, XtreamVodProvider>();
         serviceCollection.AddSingleton<RecordingEngine>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<RecordingEngine>());
+        serviceCollection.AddSingleton<ConnectionMultiplexer>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<ConnectionMultiplexer>());
     }
 }

@@ -58,6 +58,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
     // Lazy to break circular dependency (RecordingEngine → LiveTvService → RecordingEngine)
     private RecordingEngine? _recordingEngine;
+    private ConnectionMultiplexer? _connectionMultiplexer;
 
     /// <inheritdoc />
     public string Name => "Xtream Live";
@@ -66,6 +67,8 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     public string HomePageUrl => string.Empty;
 
     private RecordingEngine RecordingEngine => _recordingEngine ??= serviceProvider.GetRequiredService<RecordingEngine>();
+
+    private ConnectionMultiplexer ConnectionMultiplexer => _connectionMultiplexer ??= serviceProvider.GetRequiredService<ConnectionMultiplexer>();
 
     /// <summary>
     /// Gets a snapshot of current timers for the recording engine.
@@ -380,6 +383,22 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         }
 
         Plugin plugin = Plugin.Instance;
+
+        // If multiplexing is enabled, use the multiplexer for all live TV channels
+        if (plugin.Configuration.EnableMultiplexing)
+        {
+            string muxTunerKey = $"multiplex_{channel}";
+            ILiveStream? muxStream = currentLiveStreams.Find(s => s.TunerHostId == MultiplexedRestream.TunerHost && s.MediaSource.Id == muxTunerKey);
+            if (muxStream == null)
+            {
+                muxStream = new MultiplexedRestream(appHost, logger, ConnectionMultiplexer, channel);
+                await muxStream.Open(cancellationToken).ConfigureAwait(false);
+            }
+
+            muxStream.ConsumerCount++;
+            return muxStream;
+        }
+
         MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel, restream: true);
         ILiveStream? stream = currentLiveStreams.Find(stream => stream.TunerHostId == Restream.TunerHost && stream.MediaSource.Id == mediaSourceInfo.Id);
 

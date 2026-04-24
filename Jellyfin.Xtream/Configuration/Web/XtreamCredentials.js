@@ -16,6 +16,12 @@ export default function (view) {
       view.querySelector('#UserAgent').value = config.UserAgent;
       view.querySelector('#MyTimezone').value = config.MyTimezone;
 
+      // Multiplexer settings
+      view.querySelector('#EnableMultiplexing').checked = config.EnableMultiplexing || false;
+      view.querySelector('#MaxActiveConnections').value = config.MaxActiveConnections || 1;
+      view.querySelector('#MultiplexSliceSeconds').value = config.MultiplexSliceSeconds || 3;
+      view.querySelector('#MultiplexRetentionSeconds').value = config.MultiplexRetentionSeconds || 120;
+
       // Populate EPG sources
       const tbody = view.querySelector('#EpgSourcesBody');
       tbody.innerHTML = '';
@@ -84,6 +90,12 @@ export default function (view) {
         config.Password = view.querySelector('#Password').value;
         config.UserAgent = view.querySelector('#UserAgent').value;
         config.MyTimezone = view.querySelector('#MyTimezone').value;
+
+        // Multiplexer settings
+        config.EnableMultiplexing = view.querySelector('#EnableMultiplexing').checked;
+        config.MaxActiveConnections = parseInt(view.querySelector('#MaxActiveConnections').value, 10) || 1;
+        config.MultiplexSliceSeconds = parseInt(view.querySelector('#MultiplexSliceSeconds').value, 10) || 3;
+        config.MultiplexRetentionSeconds = parseInt(view.querySelector('#MultiplexRetentionSeconds').value, 10) || 120;
 
         // Collect EPG sources from table
         config.EpgSources = [];
