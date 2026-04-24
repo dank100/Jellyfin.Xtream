@@ -469,13 +469,14 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             return [];
         }
 
-        // Set StartDate close to "now" so the player sends startTimeTicks ≈ 0.
-        // This makes the transcoder start from the beginning of the TS file,
-        // producing an EVENT playlist with ALL segments — enabling full backward
-        // seeking. StartDate drifts due to EPG caching but the trade-off (slightly
-        // inaccurate seekbar vs full seeking) is worth it. EndDate uses the
-        // scheduled end so the programme persists in the guide despite caching.
-        var start = DateTime.UtcNow;
+        // Use the actual recording start time for correct EPG display.
+        // The transcoder's initial live HLS command has no -ss parameter,
+        // so it reads from byte 0 of the TS file regardless of StartDate.
+        // Backward seeking works via the guide overlay which creates new
+        // playback sessions — the transcoder restarts with -ss at the
+        // requested position in the seekable TS file.
+        var activeRec = RecordingEngine.GetActiveRecording(timerId);
+        var start = activeRec?.StartedUtc ?? timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
         var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
 
         if (end < startDateUtc || start >= endDateUtc)
