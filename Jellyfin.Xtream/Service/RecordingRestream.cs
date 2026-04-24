@@ -52,7 +52,8 @@ public class RecordingRestream : ILiveStream, IDisposable
     /// <param name="timerId">The timer ID for this recording.</param>
     /// <param name="timer">The timer info with schedule times, or null if unavailable.</param>
     /// <param name="tsFilePath">Path to the growing TS file, or null to fall back to HLS endpoint.</param>
-    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, TimerInfo? timer = null, string? tsFilePath = null)
+    /// <param name="recordingStartUtc">When the recording actually started (for RunTimeTicks calculation).</param>
+    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, TimerInfo? timer = null, string? tsFilePath = null, DateTime? recordingStartUtc = null)
     {
         _logger = logger;
         _timerId = timerId;
@@ -64,6 +65,11 @@ public class RecordingRestream : ILiveStream, IDisposable
             // Point directly at the growing TS file on disk.
             // Protocol=File lets the transcoder's ffmpeg seek to any byte
             // position, enabling backward seeking to the recording start.
+            // IsInfiniteStream=false + RunTimeTicks tells the player this
+            // is a seekable file with a known duration.
+            var elapsed = recordingStartUtc.HasValue
+                ? DateTime.UtcNow - recordingStartUtc.Value
+                : TimeSpan.Zero;
             MediaSource = new MediaSourceInfo
             {
                 Id = $"recording_{timerId}",
@@ -73,7 +79,8 @@ public class RecordingRestream : ILiveStream, IDisposable
                 SupportsDirectPlay = false,
                 SupportsDirectStream = false,
                 SupportsTranscoding = true,
-                IsInfiniteStream = true,
+                IsInfiniteStream = false,
+                RunTimeTicks = elapsed.Ticks,
                 MediaStreams = new List<MediaStream>
                 {
                     new MediaStream

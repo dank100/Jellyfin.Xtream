@@ -373,7 +373,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             var activeRec = RecordingEngine.GetActiveRecording(timerId);
             string? tsFilePath = activeRec?.TsFilePath;
 
-            var recStream = new RecordingRestream(appHost, logger, timerId, timer, tsFilePath);
+            var recStream = new RecordingRestream(appHost, logger, timerId, timer, tsFilePath, activeRec?.StartedUtc);
             await recStream.Open(cancellationToken).ConfigureAwait(false);
             recStream.ConsumerCount++;
             return recStream;
