@@ -472,7 +472,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 EndDate = end,
                 Name = timer.Name,
                 Overview = $"Recording in progress: {timer.Name}",
-                IsLive = true,
+                IsLive = false,
             }
         ];
     }
