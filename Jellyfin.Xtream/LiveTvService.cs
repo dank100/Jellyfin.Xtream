@@ -469,14 +469,13 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             return [];
         }
 
-        // Use the actual recording start time so the seekbar begins at
-        // the real capture start. Keep the scheduled end time for EndDate
-        // because EPG data is cached — setting EndDate=UtcNow goes stale
-        // immediately and the programme disappears from the guide.
-        // The seekbar shows the full programme but the playhead positions
-        // at the live edge; HLS.js cannot seek past available content.
-        var activeRec = RecordingEngine.GetActiveRecording(timerId);
-        var start = activeRec?.StartedUtc ?? timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
+        // Set StartDate close to "now" so the player sends startTimeTicks ≈ 0.
+        // This makes the transcoder start from the beginning of the TS file,
+        // producing an EVENT playlist with ALL segments — enabling full backward
+        // seeking. StartDate drifts due to EPG caching but the trade-off (slightly
+        // inaccurate seekbar vs full seeking) is worth it. EndDate uses the
+        // scheduled end so the programme persists in the guide despite caching.
+        var start = DateTime.UtcNow;
         var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
 
         if (end < startDateUtc || start >= endDateUtc)
