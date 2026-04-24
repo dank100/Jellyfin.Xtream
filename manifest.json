@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Fix seekbar time correlation\n\nSet `IsLive=false` on the virtual recording programme. The live TV player was positioning the seekbar at wall clock \"now\" instead of the actual playback position. Now the seekbar correctly starts at the programme start time and reflects where you actually are in the recording.",
+        "checksum": "f1c03d818a019d016cc8f6f63df22b5c",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.22.0/jellyfin-xtream_0.9.22.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-24T05:49:13Z",
+        "version": "0.9.22.0"
+      },
+      {
         "changelog": "## Recording channels: start from beginning + full seekbar\n\nSwitched from HTTP HLS URL to local TS file for recording channel playback:\n\n- **Starts from the beginning** — ffmpeg reads the TS file from byte 0\n- **Full EPG timeslot in seekbar** — `RunTimeTicks` set to scheduled duration (with padding)\n- **Seeking works** — ffmpeg can use `-ss` on the local file when you scrub the timeline",
         "checksum": "add6fc95d287e67a7e33281b74ebe3f7",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.21.0/jellyfin-xtream_0.9.21.0.zip",
