@@ -257,12 +257,13 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
 #pragma warning restore CA3003
 
         var result = new List<string>();
+        bool hasEndList = false;
         foreach (string line in lines)
         {
             result.Add(line);
 
-            // After the #EXTM3U header, inject a start-offset tag so players and
-            // ffmpeg begin at the first segment instead of the live edge.
+            // After the #EXTM3U header, inject a start-offset tag so players
+            // begin at the first segment instead of the live edge.
             if (line.StartsWith("#EXTM3U", StringComparison.Ordinal))
             {
                 result.Add("#EXT-X-START:TIME-OFFSET=0,PRECISE=YES");
@@ -273,6 +274,18 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             {
                 result[^1] = "segments/" + line;
             }
+
+            if (line.StartsWith("#EXT-X-ENDLIST", StringComparison.Ordinal))
+            {
+                hasEndList = true;
+            }
+        }
+
+        // Force VOD mode so HLS.js starts from position 0 instead of the live edge.
+        // The client will reload the playlist to discover new segments.
+        if (!hasEndList)
+        {
+            result.Add("#EXT-X-ENDLIST");
         }
 
         string content = string.Join('\n', result);

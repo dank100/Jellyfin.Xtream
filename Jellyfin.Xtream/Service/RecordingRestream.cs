@@ -30,12 +30,12 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Xtream.Service;
 
 /// <summary>
-/// A live stream backed by the growing TS file from an active recording.
-/// Implements IDirectStreamProvider so Jellyfin serves the data through the
-/// LiveStreamFiles endpoint, starting from byte 0 (the beginning of the recording).
-/// This ensures the player always starts from the beginning rather than the live edge.
+/// A live stream that points directly at the plugin's own HLS endpoint for an
+/// active recording. By using direct-play with a VOD-style HLS playlist
+/// (containing #EXT-X-ENDLIST), the player starts from the beginning of the
+/// recording instead of the live edge.
 /// </summary>
-public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
+public class RecordingRestream : ILiveStream, IDisposable
 {
     /// <summary>
     /// The global constant for the recording restream tuner host.
@@ -44,8 +44,6 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
 
     private readonly ILogger _logger;
     private readonly string _timerId;
-    private readonly string _tsFilePath;
-    private readonly Func<bool> _isStillGrowing;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RecordingRestream"/> class.
@@ -53,46 +51,33 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
     /// <param name="appHost">Instance of the <see cref="IServerApplicationHost"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
     /// <param name="timerId">The timer ID for this recording.</param>
-    /// <param name="tsFilePath">The local path to the growing TS file.</param>
-    /// <param name="isStillGrowing">Delegate that returns true while the recording is in progress.</param>
     /// <param name="timer">The timer info with schedule times, or null if unavailable.</param>
-    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, string tsFilePath, Func<bool> isStillGrowing, TimerInfo? timer = null)
+    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, TimerInfo? timer = null)
     {
         _logger = logger;
         _timerId = timerId;
-        _tsFilePath = tsFilePath;
-        _isStillGrowing = isStillGrowing;
 
         UniqueId = Guid.NewGuid().ToString();
 
-        // RunTimeTicks = remaining recording time (scheduledEnd - now), matching the
-        // programme duration [now, scheduledEnd] so seekbar and media source agree.
-        long? runTimeTicks = null;
-        if (timer != null)
-        {
-            var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
-            var remaining = end - DateTime.UtcNow;
-            if (remaining.Ticks > 0)
-            {
-                runTimeTicks = remaining.Ticks;
-            }
-        }
+        // Point directly at the plugin's HLS endpoint which serves a VOD-style
+        // playlist (with #EXT-X-ENDLIST). This makes HLS.js start from position 0
+        // instead of seeking to the live edge.
+        string hlsPath = $"/Xtream/Recordings/{timerId}/stream.m3u8";
+        string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
 
-        // Serve through the LiveStreamFiles endpoint so Jellyfin reads from our
-        // GetStream() (byte 0) instead of opening the file itself at the live edge.
-        string path = $"/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
         MediaSource = new MediaSourceInfo
         {
             Id = $"recording_{timerId}",
-            Path = appHost.GetSmartApiUrl(IPAddress.Any) + path,
-            EncoderPath = appHost.GetApiUrlForLocalAccess() + path,
+            Path = baseUrl + hlsPath,
             Protocol = MediaProtocol.Http,
-            Container = "ts",
+            Container = "hls",
+            // Direct play forces the client to use our Path URL directly,
+            // bypassing Jellyfin's transcoder (which produces EVENT playlists
+            // that HLS.js treats as live → live edge).
             SupportsDirectPlay = true,
-            SupportsDirectStream = true,
-            SupportsTranscoding = true,
+            SupportsDirectStream = false,
+            SupportsTranscoding = false,
             IsInfiniteStream = false,
-            RunTimeTicks = runTimeTicks,
             MediaStreams = new List<MediaStream>
             {
                 new MediaStream
@@ -136,7 +121,7 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
     /// <inheritdoc />
     public Task Open(CancellationToken openCancellationToken)
     {
-        _logger.LogInformation("Opening recording stream for timer {TimerId} from {Path}", _timerId, _tsFilePath);
+        _logger.LogInformation("Opening recording HLS stream for timer {TimerId}, URL: {Url}", _timerId, MediaSource.Path);
         return Task.CompletedTask;
     }
 
@@ -150,8 +135,8 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
     /// <inheritdoc />
     public Stream GetStream()
     {
-        _logger.LogInformation("Serving recording TS from byte 0 for timer {TimerId}", _timerId);
-        return new TailingFileStream(_tsFilePath, _isStillGrowing);
+        // Not used — playback goes through direct-play HLS, not IDirectStreamProvider.
+        throw new NotSupportedException("RecordingRestream uses direct-play HLS; GetStream should not be called.");
     }
 
     /// <summary>
@@ -160,7 +145,6 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
     /// <param name="disposing">Whether to dispose managed resources.</param>
     protected virtual void Dispose(bool disposing)
     {
-        // TailingFileStream instances are disposed by their consumers.
     }
 
     /// <inheritdoc />

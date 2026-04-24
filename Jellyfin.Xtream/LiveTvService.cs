@@ -16,7 +16,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -352,12 +351,6 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         // Check if this is a virtual recording channel
         if (_recordingChannelMap.TryGetValue(channelId, out string? timerId))
         {
-            string? tsPath = RecordingEngine.GetTsFilePath(timerId);
-            if (tsPath == null || !File.Exists(tsPath))
-            {
-                throw new FileNotFoundException($"Recording TS file not found for timer {timerId}");
-            }
-
             // Reuse an existing stream if another consumer is already watching
             ILiveStream? existing = currentLiveStreams.Find(s => s.TunerHostId == RecordingRestream.TunerHost && s.MediaSource.Id == $"recording_{timerId}");
             if (existing != null)
@@ -366,14 +359,14 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 return existing;
             }
 
-            // Look up the timer to provide duration info for the seekbar
+            // Look up the timer to provide duration info
             TimerInfo? timer;
             lock (_timers)
             {
                 _timers.TryGetValue(timerId, out timer);
             }
 
-            var recStream = new RecordingRestream(appHost, logger, timerId, tsPath, () => RecordingEngine.IsRecordingActive(timerId), timer);
+            var recStream = new RecordingRestream(appHost, logger, timerId, timer);
             await recStream.Open(cancellationToken).ConfigureAwait(false);
             recStream.ConsumerCount++;
             return recStream;
@@ -456,11 +449,10 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
         var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
 
-        // Anchor the programme at "now" so the live TV player calculates
-        // position = (now - StartDate) ≈ 0, matching byte 0 of the TS file.
-        // End at the actual scheduled end so the seekbar covers the full window.
-        var now = DateTime.UtcNow;
-        var start = now;
+        // Use actual recording times. Since we bypass the transcoder via
+        // direct-play HLS (with #EXT-X-ENDLIST → VOD mode), the player
+        // starts from the beginning and the seekbar works correctly.
+        var start = scheduledStart;
         var end = scheduledEnd;
 
         if (end < startDateUtc || start >= endDateUtc)
