@@ -373,7 +373,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 _timers.TryGetValue(timerId, out timer);
             }
 
-            var recStream = new RecordingRestream(logger, timerId, tsPath, timer);
+            var recStream = new RecordingRestream(appHost, logger, timerId, tsPath, () => RecordingEngine.IsRecordingActive(timerId), timer);
             await recStream.Open(cancellationToken).ConfigureAwait(false);
             recStream.ConsumerCount++;
             return recStream;
@@ -456,13 +456,26 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
         var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
 
-        // Anchor the programme start at "now" so the live TV player calculates
-        // position = (now - StartDate) ≈ 0 and the seekbar starts at the beginning.
-        // End at the actual scheduled end — don't add full duration on top of "now"
-        // since elapsed recording time is already accounted for.
+        // The TS file contains data from scheduledStart until now (the elapsed recording).
+        // Anchor the programme at "now" so position = (now - StartDate) ≈ 0, putting the
+        // seekbar at the leftmost point which matches byte 0 of the TS file.
+        // Duration = elapsed recording time = how much content the file actually has.
         var now = DateTime.UtcNow;
+        var elapsed = now - scheduledStart;
+        if (elapsed < TimeSpan.Zero)
+        {
+            elapsed = TimeSpan.Zero;
+        }
+
+        // Cap at total scheduled duration in case clock drifts past the schedule
+        var totalDuration = scheduledEnd - scheduledStart;
+        if (elapsed > totalDuration)
+        {
+            elapsed = totalDuration;
+        }
+
         var start = now;
-        var end = scheduledEnd;
+        var end = now + elapsed;
 
         if (end < startDateUtc || start >= endDateUtc)
         {

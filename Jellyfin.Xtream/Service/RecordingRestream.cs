@@ -16,8 +16,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
@@ -29,10 +31,11 @@ namespace Jellyfin.Xtream.Service;
 
 /// <summary>
 /// A live stream backed by the growing TS file from an active recording.
-/// Points Jellyfin at the local file so ffmpeg starts from byte 0 (the beginning)
-/// and can seek with -ss, giving a normal seekbar over the full EPG timeslot.
+/// Implements IDirectStreamProvider so Jellyfin serves the data through the
+/// LiveStreamFiles endpoint, starting from byte 0 (the beginning of the recording).
+/// This ensures the player always starts from the beginning rather than the live edge.
 /// </summary>
-public class RecordingRestream : ILiveStream, IDisposable
+public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
 {
     /// <summary>
     /// The global constant for the recording restream tuner host.
@@ -41,43 +44,58 @@ public class RecordingRestream : ILiveStream, IDisposable
 
     private readonly ILogger _logger;
     private readonly string _timerId;
+    private readonly string _tsFilePath;
+    private readonly Func<bool> _isStillGrowing;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RecordingRestream"/> class.
     /// </summary>
+    /// <param name="appHost">Instance of the <see cref="IServerApplicationHost"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
     /// <param name="timerId">The timer ID for this recording.</param>
     /// <param name="tsFilePath">The local path to the growing TS file.</param>
+    /// <param name="isStillGrowing">Delegate that returns true while the recording is in progress.</param>
     /// <param name="timer">The timer info with schedule times, or null if unavailable.</param>
-    public RecordingRestream(ILogger logger, string timerId, string tsFilePath, TimerInfo? timer = null)
+    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, string tsFilePath, Func<bool> isStillGrowing, TimerInfo? timer = null)
     {
         _logger = logger;
         _timerId = timerId;
+        _tsFilePath = tsFilePath;
+        _isStillGrowing = isStillGrowing;
 
         UniqueId = Guid.NewGuid().ToString();
 
-        // Compute remaining duration from the timer schedule (including padding) so the
-        // seekbar spans from now to the scheduled end of the recording.
+        // Compute elapsed recording time so the seekbar duration matches the actual
+        // content available in the TS file.
         long? runTimeTicks = null;
         if (timer != null)
         {
-            var start = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
-            var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
-            var remaining = end - DateTime.UtcNow;
-            if (remaining.Ticks > 0)
+            var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
+            var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
+            var totalDuration = scheduledEnd - scheduledStart;
+            var elapsed = DateTime.UtcNow - scheduledStart;
+            if (elapsed < TimeSpan.Zero)
             {
-                runTimeTicks = remaining.Ticks;
+                elapsed = TimeSpan.Zero;
             }
+
+            if (elapsed > totalDuration)
+            {
+                elapsed = totalDuration;
+            }
+
+            runTimeTicks = elapsed.Ticks;
         }
 
-        // Point directly at the growing TS file on disk. This lets ffmpeg:
-        // - Start reading from byte 0 (beginning of recording)
-        // - Seek with -ss when the user scrubs the timeline
+        // Serve through the LiveStreamFiles endpoint so Jellyfin reads from our
+        // GetStream() (byte 0) instead of opening the file itself at the live edge.
+        string path = $"/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
         MediaSource = new MediaSourceInfo
         {
             Id = $"recording_{timerId}",
-            Path = tsFilePath,
-            Protocol = MediaProtocol.File,
+            Path = appHost.GetSmartApiUrl(IPAddress.Any) + path,
+            EncoderPath = appHost.GetApiUrlForLocalAccess() + path,
+            Protocol = MediaProtocol.Http,
             Container = "ts",
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
@@ -116,7 +134,7 @@ public class RecordingRestream : ILiveStream, IDisposable
     public string TunerHostId => TunerHost;
 
     /// <inheritdoc />
-    public bool EnableStreamSharing => false;
+    public bool EnableStreamSharing => true;
 
     /// <inheritdoc />
     public MediaSourceInfo MediaSource { get; set; }
@@ -127,22 +145,22 @@ public class RecordingRestream : ILiveStream, IDisposable
     /// <inheritdoc />
     public Task Open(CancellationToken openCancellationToken)
     {
-        _logger.LogInformation("Opening recording TS stream for timer {TimerId}", _timerId);
+        _logger.LogInformation("Opening recording stream for timer {TimerId} from {Path}", _timerId, _tsFilePath);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task Close()
     {
-        _logger.LogInformation("Closing recording TS stream for timer {TimerId}", _timerId);
+        _logger.LogInformation("Closing recording stream for timer {TimerId}", _timerId);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Stream GetStream()
     {
-        // Not used — Jellyfin reads the local TS file path from MediaSource.Path.
-        throw new NotSupportedException("Recording streams use local file access, not GetStream().");
+        _logger.LogInformation("Serving recording TS from byte 0 for timer {TimerId}", _timerId);
+        return new TailingFileStream(_tsFilePath, _isStillGrowing);
     }
 
     /// <summary>
@@ -151,7 +169,7 @@ public class RecordingRestream : ILiveStream, IDisposable
     /// <param name="disposing">Whether to dispose managed resources.</param>
     protected virtual void Dispose(bool disposing)
     {
-        // No persistent resources to dispose.
+        // TailingFileStream instances are disposed by their consumers.
     }
 
     /// <inheritdoc />
