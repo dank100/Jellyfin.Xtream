@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Seeking and start-from-beginning for recording channels\n\n- **Start from beginning**: Injects `#EXT-X-START:TIME-OFFSET=0` into the HLS playlist so playback starts from the first segment instead of the live edge.\n- **Seeking support**: Enables `SupportsTranscoding` and `SupportsDirectStream` so Jellyfin can restart the transcode with `-ss` when seeking.\n- **Media stream info**: Declares h264/aac streams so Jellyfin can make proper direct-play vs transcode decisions.",
+        "checksum": "21df8a49ab4859e4f5c7eb1800ff2284",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.20.0/jellyfin-xtream_0.9.20.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-24T05:30:43Z",
+        "version": "0.9.20.0"
+      },
+      {
         "changelog": "## Absolute seekbar for recording channels\n\nSets `RunTimeTicks` on the recording media source based on the timer schedule (including pre/post padding), so the player shows the full scheduled duration instead of a relative 0-based seekbar.",
         "checksum": "4d55c717695dfe13ae203edd392e168b",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.19.0/jellyfin-xtream_0.9.19.0.zip",
