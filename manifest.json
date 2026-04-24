@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix recording seekbar: bypass Jellyfin transcoder via direct-play HLS. The plugin HLS endpoint now serves VOD-style playlist (#EXT-X-ENDLIST) so HLS.js starts from position 0 instead of the live edge.",
+        "checksum": "91fcdd3beb439751dc9aef091af7d1dd",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.27.0/Jellyfin.Xtream.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-24T07:37:14Z",
+        "version": "0.9.27.0"
+      },
+      {
         "changelog": "## Fix end time\n\nProgramme window: `[now, scheduledEnd]` — seekbar shows the correct remaining recording duration.\n\nCombined with IDirectStreamProvider from v0.9.25 which guarantees data starts from byte 0 (beginning of recording).\n\nAs you watch, seekbar and video advance 1:1.",
         "checksum": "267a7ccba44a4d249b2b100b5b7d53c2",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.26.0/jellyfin-xtream_0.9.26.0.zip",
