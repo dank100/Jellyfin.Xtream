@@ -18,7 +18,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
@@ -29,9 +28,9 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Xtream.Service;
 
 /// <summary>
-/// A live stream that points clients at the HLS playlist for an active recording.
-/// Does NOT implement IDirectStreamProvider — the client plays the HLS URL directly,
-/// which gives native seeking support on all platforms (HLS.js, ExoPlayer, AVPlayer).
+/// A live stream backed by the growing TS file from an active recording.
+/// Points Jellyfin at the local file so ffmpeg starts from byte 0 (the beginning)
+/// and can seek with -ss, giving a normal seekbar over the full EPG timeslot.
 /// </summary>
 public class RecordingRestream : ILiveStream, IDisposable
 {
@@ -46,22 +45,19 @@ public class RecordingRestream : ILiveStream, IDisposable
     /// <summary>
     /// Initializes a new instance of the <see cref="RecordingRestream"/> class.
     /// </summary>
-    /// <param name="appHost">Instance of the <see cref="IServerApplicationHost"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
     /// <param name="timerId">The timer ID for this recording.</param>
+    /// <param name="tsFilePath">The local path to the growing TS file.</param>
     /// <param name="timer">The timer info with schedule times, or null if unavailable.</param>
-    public RecordingRestream(IServerApplicationHost appHost, ILogger logger, string timerId, TimerInfo? timer = null)
+    public RecordingRestream(ILogger logger, string timerId, string tsFilePath, TimerInfo? timer = null)
     {
         _logger = logger;
         _timerId = timerId;
 
         UniqueId = Guid.NewGuid().ToString();
 
-        string hlsUrl = $"{appHost.GetSmartApiUrl(System.Net.IPAddress.Any)}/Xtream/Recordings/{timerId}/stream.m3u8";
-        string hlsUrlLocal = $"{appHost.GetApiUrlForLocalAccess()}/Xtream/Recordings/{timerId}/stream.m3u8";
-
         // Compute total duration from the timer schedule (including padding) so the
-        // player shows an absolute seekbar spanning the full recording window.
+        // player shows a seekbar spanning the full recording window.
         long? runTimeTicks = null;
         if (timer != null)
         {
@@ -70,13 +66,15 @@ public class RecordingRestream : ILiveStream, IDisposable
             runTimeTicks = (end - start).Ticks;
         }
 
+        // Point directly at the growing TS file on disk. This lets ffmpeg:
+        // - Start reading from byte 0 (beginning of recording)
+        // - Seek with -ss when the user scrubs the timeline
         MediaSource = new MediaSourceInfo
         {
             Id = $"recording_{timerId}",
-            Path = hlsUrl,
-            EncoderPath = hlsUrlLocal,
-            Protocol = MediaProtocol.Http,
-            Container = "hls",
+            Path = tsFilePath,
+            Protocol = MediaProtocol.File,
+            Container = "ts",
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsTranscoding = true,
@@ -125,22 +123,22 @@ public class RecordingRestream : ILiveStream, IDisposable
     /// <inheritdoc />
     public Task Open(CancellationToken openCancellationToken)
     {
-        _logger.LogInformation("Opening recording HLS stream for timer {TimerId}", _timerId);
+        _logger.LogInformation("Opening recording TS stream for timer {TimerId}", _timerId);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task Close()
     {
-        _logger.LogInformation("Closing recording HLS stream for timer {TimerId}", _timerId);
+        _logger.LogInformation("Closing recording TS stream for timer {TimerId}", _timerId);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Stream GetStream()
     {
-        // Not used — clients play the HLS URL directly from MediaSource.Path.
-        throw new NotSupportedException("Recording streams use HLS direct play, not GetStream().");
+        // Not used — Jellyfin reads the local TS file path from MediaSource.Path.
+        throw new NotSupportedException("Recording streams use local file access, not GetStream().");
     }
 
     /// <summary>
