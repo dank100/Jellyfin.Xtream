@@ -468,11 +468,26 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
         var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
 
-        // Use actual recording times. Since we bypass the transcoder via
-        // direct-play HLS (with #EXT-X-ENDLIST → VOD mode), the player
-        // starts from the beginning and the seekbar works correctly.
-        var start = scheduledStart;
-        var end = scheduledEnd;
+        // The live TV player positions the seekbar at (now - StartDate).
+        // Anchor StartDate=now so the seekbar starts at 0, matching the
+        // direct-play HLS content which starts from the beginning.
+        // EndDate = now + elapsed recording time, showing only available content.
+        var now = DateTime.UtcNow;
+        var elapsed = now - scheduledStart;
+        if (elapsed < TimeSpan.Zero)
+        {
+            elapsed = TimeSpan.Zero;
+        }
+
+        // Cap at the total scheduled duration
+        var totalDuration = scheduledEnd - scheduledStart;
+        if (elapsed > totalDuration)
+        {
+            elapsed = totalDuration;
+        }
+
+        var start = now;
+        var end = now + elapsed;
 
         if (end < startDateUtc || start >= endDateUtc)
         {

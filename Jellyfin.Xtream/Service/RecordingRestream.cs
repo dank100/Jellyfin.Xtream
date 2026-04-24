@@ -65,12 +65,25 @@ public class RecordingRestream : ILiveStream, IDisposable
         string hlsPath = $"/Xtream/Recordings/{timerId}/stream.m3u8";
         string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
 
+        // Calculate elapsed recording duration for RunTimeTicks
+        long? runTimeTicks = null;
+        if (timer != null)
+        {
+            var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
+            var elapsed = DateTime.UtcNow - scheduledStart;
+            if (elapsed > TimeSpan.Zero)
+            {
+                runTimeTicks = elapsed.Ticks;
+            }
+        }
+
         MediaSource = new MediaSourceInfo
         {
             Id = $"recording_{timerId}",
             Path = baseUrl + hlsPath,
             Protocol = MediaProtocol.Http,
             Container = "hls",
+            RunTimeTicks = runTimeTicks,
             // Direct play forces the client to use our Path URL directly,
             // bypassing Jellyfin's transcoder (which produces EVENT playlists
             // that HLS.js treats as live → live edge).
