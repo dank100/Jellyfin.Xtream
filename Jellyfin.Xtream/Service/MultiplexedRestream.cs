@@ -118,19 +118,22 @@ public class MultiplexedRestream : ILiveStream, IDisposable
         _logger.LogInformation("Opening multiplexed stream for channel {StreamId}", _streamId);
         var buffer = _multiplexer.Subscribe(_streamId);
 
-        // Wait for the first segment to become available (up to 30s)
-        var timeout = TimeSpan.FromSeconds(30);
+        // Wait for enough segments so the transcoder's ffmpeg has sufficient
+        // input to finish format analysis (analyzeduration) and produce the
+        // first output segment. With 3-second slices, 3 segments ≈ 9 seconds.
+        const int minSegments = 3;
+        var timeout = TimeSpan.FromSeconds(60);
         var deadline = DateTime.UtcNow + timeout;
-        while (buffer.State != ChannelBufferState.Ready && DateTime.UtcNow < deadline)
+        while (buffer.GetSegments().Count < minSegments && DateTime.UtcNow < deadline)
         {
             openCancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(250, openCancellationToken).ConfigureAwait(false);
+            await Task.Delay(500, openCancellationToken).ConfigureAwait(false);
         }
 
-        if (buffer.State != ChannelBufferState.Ready)
-        {
-            _logger.LogWarning("Multiplexed stream for channel {StreamId} not ready after {Timeout}s", _streamId, timeout.TotalSeconds);
-        }
+        _logger.LogInformation(
+            "Multiplexed stream for channel {StreamId}: {Count} segments ready",
+            _streamId,
+            buffer.GetSegments().Count);
     }
 
     /// <inheritdoc />

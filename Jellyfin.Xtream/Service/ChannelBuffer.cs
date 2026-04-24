@@ -179,7 +179,7 @@ public sealed class ChannelBuffer : IDisposable
             $"#EXT-X-VERSION:3",
             $"#EXT-X-TARGETDURATION:{Math.Ceiling(targetDuration):F0}",
             "#EXT-X-MEDIA-SEQUENCE:0",
-            "#EXT-X-START:TIME-OFFSET=0,PRECISE=YES",
+            "#EXT-X-PLAYLIST-TYPE:EVENT",
         };
 
         bool needDiscontinuity = false;
