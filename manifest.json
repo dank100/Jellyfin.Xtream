@@ -8,12 +8,12 @@
     "owner": "Kevinjil",
     "versions": [
       {
-        "changelog": "- Use TS file directly for recording playback (Protocol=File) to enable full backward seeking\n- Fix recording EPG: use actual capture start time, keep scheduled end\n- Fix multiplexer: always run background loop so config changes work without restart\n- Auto-detect max connections from IPTV provider API\n- Remove MaxActiveConnections from config UI",
-        "checksum": "b72fc38b3e3ce0fa154e980eeb61f7dc",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.33.0/jellyfin-xtream_0.9.33.0.zip",
+        "changelog": "- Set recording StartDate=UtcNow so transcoder starts from byte 0 of TS file — enables full backward seeking to recording start\n- Use TS file directly (Protocol=File) for seekable input\n- Fix multiplexer: always run background loop\n- Auto-detect max connections from provider API",
+        "checksum": "7bd6abf262a7a64a587375c1d4a9eb98",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.34.0/jellyfin-xtream_0.9.34.0.zip",
         "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T17:44:27Z",
-        "version": "0.9.33.0"
+        "timestamp": "2026-04-24T18:01:00Z",
+        "version": "0.9.34.0"
       },
       {
         "changelog": "## Fixes\n\n**Multiplexer:**\n- Fix 406 error on playlist endpoint — removed `[Produces]` attribute that blocked ASP.NET from serving the HLS playlist. This caused ffmpeg to exit with code 8.\n\n**Recording seekbar:**\n- Serve ffmpeg EVENT playlist as-is (no more `#EXT-X-ENDLIST` injection)\n- HLS.js now treats recording as live → positions at live edge, matching the Jellyfin guide overlay\n- All segments from the beginning are available for backward seeking\n- Use actual schedule times for programme (not stale `DateTime.UtcNow`)",
