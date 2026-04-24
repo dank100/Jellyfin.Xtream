@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Fix seekbar alignment\n\n**Two key changes:**\n\n1. **Programme duration = elapsed recording time** — the seekbar range now matches the actual content in the TS file. Previously it showed remaining schedule time which was shorter than the recorded content, preventing forward seeking.\n\n2. **IDirectStreamProvider** — RecordingRestream now serves the TS file through Jellyfin's LiveStreamFiles endpoint via TailingFileStream (like Restream does). This guarantees data is always served from byte 0 (beginning of recording) regardless of how Jellyfin handles file protocol internally.",
+        "checksum": "3c7ae79ef04f073c5b090998b0b7e5fe",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.25.0/jellyfin-xtream_0.9.25.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-24T06:50:25Z",
+        "version": "0.9.25.0"
+      },
+      {
         "changelog": "## Fix programme end time\n\nProgramme end was `now + totalDuration` which overshot past the actual scheduled end. Now uses `scheduledEnd` directly so the seekbar window is `[now, scheduledEnd]` = remaining recording time.\n\n`RunTimeTicks` on the MediaSource also reflects remaining duration to stay in sync.",
         "checksum": "348234cbf000156918220288b68e0214",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.24.0/jellyfin-xtream_0.9.24.0.zip",
