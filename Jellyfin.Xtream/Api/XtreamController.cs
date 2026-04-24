@@ -267,10 +267,23 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             }
         }
 
-        // Serve the ffmpeg EVENT playlist as-is (no #EXT-X-ENDLIST injection).
-        // HLS.js treats it as live → positions at the live edge, matching the
-        // Jellyfin guide overlay which also positions at wall clock "now".
-        // All segments from the beginning are available for backward seeking.
+        // Add #EXT-X-ENDLIST so hls.js treats the playlist as VOD, enabling
+        // full backward seeking from segment 0 to the last segment.
+        // Without this, hls.js treats EVENT playlists as live and limits the
+        // seekable range to a small window near the live edge.
+        // Also add #EXT-X-START to position the player near the live edge.
+        if (result.Count > 0 && !result.Any(l => l.Contains("#EXT-X-ENDLIST", StringComparison.Ordinal)))
+        {
+            // Insert START tag after the header (before first segment)
+            int insertIdx = result.FindIndex(l => l.StartsWith("#EXTINF:", StringComparison.Ordinal));
+            if (insertIdx > 0)
+            {
+                result.Insert(insertIdx, "#EXT-X-START:TIME-OFFSET=-12,PRECISE=YES");
+            }
+
+            result.Add("#EXT-X-ENDLIST");
+        }
+
         string content = string.Join('\n', result);
 
         Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
