@@ -104,13 +104,6 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableMultiplexing { get; set; }
 
     /// <summary>
-    /// Gets or sets the maximum number of simultaneous IPTV connections allowed by
-    /// the provider. When multiplexing is enabled, the multiplexer will open at most
-    /// this many concurrent connections.
-    /// </summary>
-    public int MaxActiveConnections { get; set; } = 1;
-
-    /// <summary>
     /// Gets or sets the number of seconds to capture from each channel per round-robin
     /// cycle. Lower values reduce per-channel latency but increase reconnect churn.
     /// </summary>

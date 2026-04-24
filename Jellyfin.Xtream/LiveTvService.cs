@@ -465,15 +465,11 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             return [];
         }
 
-        var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
-        var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
-
-        // Use actual schedule times. The live TV seekbar positions at
-        // (wall clock now - StartDate), which matches HLS.js positioning
-        // at the live edge of the EVENT playlist. All segments from the
-        // beginning are available for backward seeking.
-        var start = scheduledStart;
-        var end = scheduledEnd;
+        // Use the actual recording start time (when ffmpeg began capturing)
+        // and cap the end at "now" so the seekbar only covers available content.
+        var activeRec = RecordingEngine.GetActiveRecording(timerId);
+        var start = activeRec?.StartedUtc ?? timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
+        var end = DateTime.UtcNow;
 
         if (end < startDateUtc || start >= endDateUtc)
         {

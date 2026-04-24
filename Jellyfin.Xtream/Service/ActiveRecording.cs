@@ -41,6 +41,11 @@ public sealed class ActiveRecording : IDisposable
     public TimerInfo Timer { get; }
 
     /// <summary>
+    /// Gets the UTC time when the recording actually started capturing.
+    /// </summary>
+    public DateTime StartedUtc { get; } = DateTime.UtcNow;
+
+    /// <summary>
     /// Gets or sets the output file path (HLS segment directory).
     /// </summary>
     public string? FilePath { get; set; }

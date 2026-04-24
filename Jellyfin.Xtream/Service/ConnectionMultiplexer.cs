@@ -20,6 +20,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Configuration;
 using MediaBrowser.Controller.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -36,20 +37,24 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
 {
     private readonly ILogger<ConnectionMultiplexer> _logger;
     private readonly IServerConfigurationManager _config;
+    private readonly IXtreamClient _xtreamClient;
     private readonly ConcurrentDictionary<int, ChannelBuffer> _channels = new();
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private bool _disposed;
+    private int _maxConnections = 1;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConnectionMultiplexer"/> class.
     /// </summary>
     /// <param name="logger">Instance of the <see cref="ILogger{ConnectionMultiplexer}"/> interface.</param>
     /// <param name="config">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
-    public ConnectionMultiplexer(ILogger<ConnectionMultiplexer> logger, IServerConfigurationManager config)
+    /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
+    public ConnectionMultiplexer(ILogger<ConnectionMultiplexer> logger, IServerConfigurationManager config, IXtreamClient xtreamClient)
     {
         _logger = logger;
         _config = config;
+        _xtreamClient = xtreamClient;
     }
 
     /// <summary>
@@ -130,24 +135,35 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     }
 
     /// <inheritdoc />
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         PluginConfiguration pluginConfig = Plugin.Instance.Configuration;
         if (!pluginConfig.EnableMultiplexing)
         {
             _logger.LogInformation("Stream multiplexing is disabled");
-            return Task.CompletedTask;
+            return;
+        }
+
+        // Fetch max connections from the IPTV provider
+        try
+        {
+            var connectionInfo = Plugin.Instance.Creds;
+            var info = await _xtreamClient.GetUserAndServerInfoAsync(connectionInfo, cancellationToken).ConfigureAwait(false);
+            _maxConnections = Math.Max(1, info.UserInfo.MaxConnections);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not fetch provider info for max connections, defaulting to {Max}", _maxConnections);
         }
 
         _logger.LogInformation(
             "Starting stream multiplexer (slice={Slice}s, retention={Retention}s, maxConn={MaxConn})",
             pluginConfig.MultiplexSliceSeconds,
             pluginConfig.MultiplexRetentionSeconds,
-            pluginConfig.MaxActiveConnections);
+            _maxConnections);
 
         _cts = new CancellationTokenSource();
         _loopTask = Task.Run(() => RoundRobinLoopAsync(_cts.Token), _cts.Token);
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc />

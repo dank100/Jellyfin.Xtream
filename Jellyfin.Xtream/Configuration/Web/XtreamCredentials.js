@@ -18,7 +18,6 @@ export default function (view) {
 
       // Multiplexer settings
       view.querySelector('#EnableMultiplexing').checked = config.EnableMultiplexing || false;
-      view.querySelector('#MaxActiveConnections').value = config.MaxActiveConnections || 1;
       view.querySelector('#MultiplexSliceSeconds').value = config.MultiplexSliceSeconds || 3;
       view.querySelector('#MultiplexRetentionSeconds').value = config.MultiplexRetentionSeconds || 120;
 
@@ -93,7 +92,6 @@ export default function (view) {
 
         // Multiplexer settings
         config.EnableMultiplexing = view.querySelector('#EnableMultiplexing').checked;
-        config.MaxActiveConnections = parseInt(view.querySelector('#MaxActiveConnections').value, 10) || 1;
         config.MultiplexSliceSeconds = parseInt(view.querySelector('#MultiplexSliceSeconds').value, 10) || 3;
         config.MultiplexRetentionSeconds = parseInt(view.querySelector('#MultiplexRetentionSeconds').value, 10) || 120;
 

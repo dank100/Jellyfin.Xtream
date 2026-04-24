@@ -504,6 +504,17 @@ public class RecordingEngine : IHostedService, IDisposable
     public bool IsRecordingActive(string timerId) => _activeRecordings.ContainsKey(timerId);
 
     /// <summary>
+    /// Gets the active recording for a timer, or null if not active.
+    /// </summary>
+    /// <param name="timerId">The timer ID.</param>
+    /// <returns>The active recording, or null.</returns>
+    public ActiveRecording? GetActiveRecording(string timerId)
+    {
+        _activeRecordings.TryGetValue(timerId, out var recording);
+        return recording;
+    }
+
+    /// <summary>
     /// Gets a snapshot of active recordings that have a ready (non-empty) TS file.
     /// Used by LiveTvService to expose virtual recording channels.
     /// </summary>
