@@ -65,26 +65,17 @@ public class RecordingRestream : ILiveStream, IDirectStreamProvider, IDisposable
 
         UniqueId = Guid.NewGuid().ToString();
 
-        // Compute elapsed recording time so the seekbar duration matches the actual
-        // content available in the TS file.
+        // RunTimeTicks = remaining recording time (scheduledEnd - now), matching the
+        // programme duration [now, scheduledEnd] so seekbar and media source agree.
         long? runTimeTicks = null;
         if (timer != null)
         {
-            var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
-            var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
-            var totalDuration = scheduledEnd - scheduledStart;
-            var elapsed = DateTime.UtcNow - scheduledStart;
-            if (elapsed < TimeSpan.Zero)
+            var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
+            var remaining = end - DateTime.UtcNow;
+            if (remaining.Ticks > 0)
             {
-                elapsed = TimeSpan.Zero;
+                runTimeTicks = remaining.Ticks;
             }
-
-            if (elapsed > totalDuration)
-            {
-                elapsed = totalDuration;
-            }
-
-            runTimeTicks = elapsed.Ticks;
         }
 
         // Serve through the LiveStreamFiles endpoint so Jellyfin reads from our

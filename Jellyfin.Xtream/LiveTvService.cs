@@ -456,26 +456,12 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         var scheduledStart = timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
         var scheduledEnd = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
 
-        // The TS file contains data from scheduledStart until now (the elapsed recording).
-        // Anchor the programme at "now" so position = (now - StartDate) ≈ 0, putting the
-        // seekbar at the leftmost point which matches byte 0 of the TS file.
-        // Duration = elapsed recording time = how much content the file actually has.
+        // Anchor the programme at "now" so the live TV player calculates
+        // position = (now - StartDate) ≈ 0, matching byte 0 of the TS file.
+        // End at the actual scheduled end so the seekbar covers the full window.
         var now = DateTime.UtcNow;
-        var elapsed = now - scheduledStart;
-        if (elapsed < TimeSpan.Zero)
-        {
-            elapsed = TimeSpan.Zero;
-        }
-
-        // Cap at total scheduled duration in case clock drifts past the schedule
-        var totalDuration = scheduledEnd - scheduledStart;
-        if (elapsed > totalDuration)
-        {
-            elapsed = totalDuration;
-        }
-
         var start = now;
-        var end = now + elapsed;
+        var end = scheduledEnd;
 
         if (end < startDateUtc || start >= endDateUtc)
         {
