@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Fix recording seekbar alignment\n\nThe live TV player positions the seekbar at `now - programme.StartDate`. Previously `StartDate` was the original schedule time, so the seekbar jumped to the live edge.\n\n**Changes:**\n- `StartDate = now` → seekbar starts at position 0 (beginning of content)\n- `EndDate = now + elapsed recording duration` → only shows available content, not the full EPG slot\n- `RunTimeTicks` set on MediaSource to match elapsed duration",
+        "checksum": "7c89209d76429ed2b5a57be14a6a14c9",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.29.0/jellyfin-xtream_0.9.29.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-24T10:22:59Z",
+        "version": "0.9.29.0"
+      },
+      {
         "changelog": "## Experimental Stream Multiplexer\n\nRound-robin a single IPTV connection across multiple live channels by capturing short HLS segments per channel. Enables watching multiple streams with a single provider connection.\n\n### New features\n- **ConnectionMultiplexer** — IHostedService that cycles through subscribed channels\n- **Per-channel HLS buffers** with discontinuity markers and bounded retention\n- **Config UI** — enable/disable multiplexing, slice duration, retention window\n- Off by default. Enable in plugin settings under \"Stream Multiplexer\".\n\n### Trade-off\nLatency increases with the number of channels: N channels × slice seconds behind live.",
         "checksum": "baa382e5bb0f379cbad928af8403ac35",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.28.0/jellyfin-xtream_0.9.28.0.zip",
