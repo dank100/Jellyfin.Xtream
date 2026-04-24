@@ -256,16 +256,26 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
         string[] lines = System.IO.File.ReadAllLines(playlistPath);
 #pragma warning restore CA3003
 
-        // Rewrite only non-comment/non-tag lines (segment filenames) to route through the API
-        for (int i = 0; i < lines.Length; i++)
+        var result = new List<string>();
+        foreach (string line in lines)
         {
-            if (!lines[i].StartsWith('#') && lines[i].StartsWith("seg_", StringComparison.Ordinal))
+            result.Add(line);
+
+            // After the #EXTM3U header, inject a start-offset tag so players and
+            // ffmpeg begin at the first segment instead of the live edge.
+            if (line.StartsWith("#EXTM3U", StringComparison.Ordinal))
             {
-                lines[i] = "segments/" + lines[i];
+                result.Add("#EXT-X-START:TIME-OFFSET=0,PRECISE=YES");
+            }
+
+            // Rewrite segment filenames to route through the API
+            if (!line.StartsWith('#') && line.StartsWith("seg_", StringComparison.Ordinal))
+            {
+                result[^1] = "segments/" + line;
             }
         }
 
-        string content = string.Join('\n', lines);
+        string content = string.Join('\n', result);
 
         Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
         Response.Headers.Append("Pragma", "no-cache");

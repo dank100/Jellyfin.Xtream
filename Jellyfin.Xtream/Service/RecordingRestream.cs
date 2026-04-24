@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +22,7 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
 using Microsoft.Extensions.Logging;
 
@@ -76,10 +78,27 @@ public class RecordingRestream : ILiveStream, IDisposable
             Protocol = MediaProtocol.Http,
             Container = "hls",
             SupportsDirectPlay = true,
-            SupportsDirectStream = false,
-            SupportsTranscoding = false,
+            SupportsDirectStream = true,
+            SupportsTranscoding = true,
             IsInfiniteStream = false,
             RunTimeTicks = runTimeTicks,
+            MediaStreams = new List<MediaStream>
+            {
+                new MediaStream
+                {
+                    Type = MediaStreamType.Video,
+                    Index = 0,
+                    Codec = "h264",
+                    IsDefault = true,
+                },
+                new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Index = 1,
+                    Codec = "aac",
+                    IsDefault = true,
+                },
+            },
         };
 
         OriginalStreamId = MediaSource.Id;
