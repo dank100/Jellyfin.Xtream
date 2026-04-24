@@ -235,7 +235,6 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     /// <returns>The m3u8 playlist file.</returns>
     [AllowAnonymous]
     [HttpGet("Recordings/{timerId}/stream.m3u8")]
-    [Produces("application/vnd.apple.mpegurl")]
     public ActionResult GetRecordingPlaylist(string timerId)
     {
         // timerId is not used to build paths directly — GetHlsDirectory performs a dictionary

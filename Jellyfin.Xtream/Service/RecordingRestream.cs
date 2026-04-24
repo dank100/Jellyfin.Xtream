@@ -60,81 +60,46 @@ public class RecordingRestream : ILiveStream, IDisposable
 
         UniqueId = Guid.NewGuid().ToString();
 
-        if (!string.IsNullOrEmpty(tsFilePath) && File.Exists(tsFilePath))
-        {
-            // Point directly at the growing TS file on disk.
-            // Protocol=File lets the transcoder's ffmpeg seek to any byte
-            // position, enabling backward seeking to the recording start.
-            // IsInfiniteStream=false + RunTimeTicks tells the player this
-            // is a seekable file with a known duration.
-            var elapsed = recordingStartUtc.HasValue
-                ? DateTime.UtcNow - recordingStartUtc.Value
-                : TimeSpan.Zero;
-            MediaSource = new MediaSourceInfo
-            {
-                Id = $"recording_{timerId}",
-                Path = tsFilePath,
-                Protocol = MediaProtocol.File,
-                Container = "mpegts",
-                SupportsDirectPlay = false,
-                SupportsDirectStream = false,
-                SupportsTranscoding = true,
-                IsInfiniteStream = false,
-                RunTimeTicks = elapsed.Ticks,
-                MediaStreams = new List<MediaStream>
-                {
-                    new MediaStream
-                    {
-                        Type = MediaStreamType.Video,
-                        Index = 0,
-                        Codec = "h264",
-                        IsDefault = true,
-                    },
-                    new MediaStream
-                    {
-                        Type = MediaStreamType.Audio,
-                        Index = 1,
-                        Codec = "aac",
-                        IsDefault = true,
-                    },
-                },
-            };
-        }
-        else
-        {
-            // Fallback: use plugin HLS endpoint via HTTP
-            string hlsPath = $"/Xtream/Recordings/{timerId}/stream.m3u8";
-            string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
+        // Direct-play the recording's HLS EVENT playlist via our API endpoint.
+        // This bypasses Jellyfin's transcoding pipeline entirely — hls.js in the
+        // browser reads the EVENT playlist with ALL segments from the beginning
+        // and handles seeking natively. No transcoding = no live-edge-only limitation.
+        string hlsPath = $"/Xtream/Recordings/{timerId}/stream.m3u8";
+        string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
 
-            MediaSource = new MediaSourceInfo
+        var elapsed = recordingStartUtc.HasValue
+            ? DateTime.UtcNow - recordingStartUtc.Value
+            : TimeSpan.Zero;
+
+        MediaSource = new MediaSourceInfo
+        {
+            Id = $"recording_{timerId}",
+            Path = baseUrl + hlsPath,
+            Protocol = MediaProtocol.Http,
+            Container = "hls",
+            SupportsDirectPlay = true,
+            SupportsDirectStream = false,
+            SupportsTranscoding = false,
+            IsInfiniteStream = false,
+            RunTimeTicks = elapsed.Ticks > 0 ? elapsed.Ticks : null,
+            MediaStreams = new List<MediaStream>
             {
-                Id = $"recording_{timerId}",
-                Path = baseUrl + hlsPath,
-                Protocol = MediaProtocol.Http,
-                Container = "hls",
-                SupportsDirectPlay = true,
-                SupportsDirectStream = false,
-                SupportsTranscoding = false,
-                IsInfiniteStream = false,
-                MediaStreams = new List<MediaStream>
+                new MediaStream
                 {
-                    new MediaStream
-                    {
-                        Type = MediaStreamType.Video,
-                        Index = 0,
-                        Codec = "h264",
-                        IsDefault = true,
-                    },
-                    new MediaStream
-                    {
-                        Type = MediaStreamType.Audio,
-                        Index = 1,
-                        Codec = "aac",
-                        IsDefault = true,
-                    },
+                    Type = MediaStreamType.Video,
+                    Index = 0,
+                    Codec = "h264",
+                    IsDefault = true,
                 },
-            };
-        }
+                new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Index = 1,
+                    Codec = "aac",
+                    IsDefault = true,
+                },
+            },
+        };
 
         OriginalStreamId = MediaSource.Id;
     }
