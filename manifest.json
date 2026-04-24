@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Fix seekbar position sync\n\nThe live TV player calculates seekbar position as `now - programme.StartDate`. When the programme used the original schedule (e.g. yesterday 19:00), the offset was hours off.\n\nNow the programme is anchored at the current time with the full duration, so the player calculates `now - now = 0` → seekbar starts at the beginning, matching the actual video.\n\n**Trade-off**: Timeline shows current time range instead of original EPG times. Original schedule is shown in the programme description.",
+        "checksum": "df85a0b6b8c1643c78158670a60ba83f",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.23.0/jellyfin-xtream_0.9.23.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-24T06:19:43Z",
+        "version": "0.9.23.0"
+      },
+      {
         "changelog": "## Fix seekbar time correlation\n\nSet `IsLive=false` on the virtual recording programme. The live TV player was positioning the seekbar at wall clock \"now\" instead of the actual playback position. Now the seekbar correctly starts at the programme start time and reflects where you actually are in the recording.",
         "checksum": "f1c03d818a019d016cc8f6f63df22b5c",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.22.0/jellyfin-xtream_0.9.22.0.zip",
