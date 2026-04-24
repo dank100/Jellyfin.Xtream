@@ -9,14 +9,14 @@
     "versions": [
       {
         "changelog": "Fix recording seekbar: bypass Jellyfin transcoder via direct-play HLS. The plugin HLS endpoint now serves VOD-style playlist (#EXT-X-ENDLIST) so HLS.js starts from position 0 instead of the live edge.",
-        "checksum": "91fcdd3beb439751dc9aef091af7d1dd",
+        "checksum": "230145fa3880ad66530a6c4a4fae58c9",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.27.0/Jellyfin.Xtream.zip",
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T07:37:14Z",
         "version": "0.9.27.0"
       },
       {
-        "changelog": "## Fix end time\n\nProgramme window: `[now, scheduledEnd]` — seekbar shows the correct remaining recording duration.\n\nCombined with IDirectStreamProvider from v0.9.25 which guarantees data starts from byte 0 (beginning of recording).\n\nAs you watch, seekbar and video advance 1:1.",
+        "changelog": "## Fix end time\n\nProgramme window: `[now, scheduledEnd]` \u2014 seekbar shows the correct remaining recording duration.\n\nCombined with IDirectStreamProvider from v0.9.25 which guarantees data starts from byte 0 (beginning of recording).\n\nAs you watch, seekbar and video advance 1:1.",
         "checksum": "267a7ccba44a4d249b2b100b5b7d53c2",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.26.0/jellyfin-xtream_0.9.26.0.zip",
         "targetAbi": "10.11.0.0",
@@ -24,7 +24,7 @@
         "version": "0.9.26.0"
       },
       {
-        "changelog": "## Fix seekbar alignment\n\n**Two key changes:**\n\n1. **Programme duration = elapsed recording time** — the seekbar range now matches the actual content in the TS file. Previously it showed remaining schedule time which was shorter than the recorded content, preventing forward seeking.\n\n2. **IDirectStreamProvider** — RecordingRestream now serves the TS file through Jellyfin's LiveStreamFiles endpoint via TailingFileStream (like Restream does). This guarantees data is always served from byte 0 (beginning of recording) regardless of how Jellyfin handles file protocol internally.",
+        "changelog": "## Fix seekbar alignment\n\n**Two key changes:**\n\n1. **Programme duration = elapsed recording time** \u2014 the seekbar range now matches the actual content in the TS file. Previously it showed remaining schedule time which was shorter than the recorded content, preventing forward seeking.\n\n2. **IDirectStreamProvider** \u2014 RecordingRestream now serves the TS file through Jellyfin's LiveStreamFiles endpoint via TailingFileStream (like Restream does). This guarantees data is always served from byte 0 (beginning of recording) regardless of how Jellyfin handles file protocol internally.",
         "checksum": "3c7ae79ef04f073c5b090998b0b7e5fe",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.25.0/jellyfin-xtream_0.9.25.0.zip",
         "targetAbi": "10.11.0.0",
@@ -40,7 +40,7 @@
         "version": "0.9.24.0"
       },
       {
-        "changelog": "## Fix seekbar position sync\n\nThe live TV player calculates seekbar position as `now - programme.StartDate`. When the programme used the original schedule (e.g. yesterday 19:00), the offset was hours off.\n\nNow the programme is anchored at the current time with the full duration, so the player calculates `now - now = 0` → seekbar starts at the beginning, matching the actual video.\n\n**Trade-off**: Timeline shows current time range instead of original EPG times. Original schedule is shown in the programme description.",
+        "changelog": "## Fix seekbar position sync\n\nThe live TV player calculates seekbar position as `now - programme.StartDate`. When the programme used the original schedule (e.g. yesterday 19:00), the offset was hours off.\n\nNow the programme is anchored at the current time with the full duration, so the player calculates `now - now = 0` \u2192 seekbar starts at the beginning, matching the actual video.\n\n**Trade-off**: Timeline shows current time range instead of original EPG times. Original schedule is shown in the programme description.",
         "checksum": "df85a0b6b8c1643c78158670a60ba83f",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.23.0/jellyfin-xtream_0.9.23.0.zip",
         "targetAbi": "10.11.0.0",
@@ -56,7 +56,7 @@
         "version": "0.9.22.0"
       },
       {
-        "changelog": "## Recording channels: start from beginning + full seekbar\n\nSwitched from HTTP HLS URL to local TS file for recording channel playback:\n\n- **Starts from the beginning** — ffmpeg reads the TS file from byte 0\n- **Full EPG timeslot in seekbar** — `RunTimeTicks` set to scheduled duration (with padding)\n- **Seeking works** — ffmpeg can use `-ss` on the local file when you scrub the timeline",
+        "changelog": "## Recording channels: start from beginning + full seekbar\n\nSwitched from HTTP HLS URL to local TS file for recording channel playback:\n\n- **Starts from the beginning** \u2014 ffmpeg reads the TS file from byte 0\n- **Full EPG timeslot in seekbar** \u2014 `RunTimeTicks` set to scheduled duration (with padding)\n- **Seeking works** \u2014 ffmpeg can use `-ss` on the local file when you scrub the timeline",
         "checksum": "add6fc95d287e67a7e33281b74ebe3f7",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.21.0/jellyfin-xtream_0.9.21.0.zip",
         "targetAbi": "10.11.0.0",
@@ -88,7 +88,7 @@
         "version": "0.9.18.0"
       },
       {
-        "changelog": "### Changes\n- **Seekable recording channels**: Virtual LiveTV channels now use HLS direct play instead of raw TS pipe. Clients play the m3u8 playlist natively (HLS.js on web, ExoPlayer on Android, AVPlayer on iOS) with full seeking support.\n- **Guide auto-refresh**: Channel list and guide refresh automatically when recordings start and stop. Virtual `● REC:` channels appear within seconds.\n- **CORS fix**: Added Access-Control-Allow-Origin header to HLS segment endpoint.\n- `IsInfiniteStream = false` — clients get a proper seek bar.\n\n### How it works\nThe recording channel MediaSource points directly at the HLS playlist API URL. No IDirectStreamProvider (no raw byte pipe). The client's native HLS player handles seeking across segments.",
+        "changelog": "### Changes\n- **Seekable recording channels**: Virtual LiveTV channels now use HLS direct play instead of raw TS pipe. Clients play the m3u8 playlist natively (HLS.js on web, ExoPlayer on Android, AVPlayer on iOS) with full seeking support.\n- **Guide auto-refresh**: Channel list and guide refresh automatically when recordings start and stop. Virtual `\u25cf REC:` channels appear within seconds.\n- **CORS fix**: Added Access-Control-Allow-Origin header to HLS segment endpoint.\n- `IsInfiniteStream = false` \u2014 clients get a proper seek bar.\n\n### How it works\nThe recording channel MediaSource points directly at the HLS playlist API URL. No IDirectStreamProvider (no raw byte pipe). The client's native HLS player handles seeking across segments.",
         "checksum": "3e5c2987caccaa8a86af7df7b835d25f",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.17/jellyfin-xtream_0.9.17.0.zip",
         "targetAbi": "10.11.0.0",
@@ -104,7 +104,7 @@
         "version": "0.9.16.0"
       },
       {
-        "changelog": "### Changes\n- Active recordings now appear as virtual LiveTV channels in the guide\n- Channels labeled **● REC: {name}** with priority channel numbers (appear at top)\n- Uses IDirectStreamProvider (same as live TV) for reliable growing playback on all clients\n- EPG program entry shows wall-clock times from the timer (enables time-based seek bar)\n- Reverted .strm approach which caused transcoding/crashes on web\n- .ts file remains in library for post-recording playback\n- Removed the stream.ts HTTP endpoint (replaced by LiveTV approach)\n\n### Known limitations\n- Virtual channels appear on next guide refresh (may take a few minutes after recording starts)\n- Seeking within the recording stream is not yet supported (treated as infinite live stream)",
+        "changelog": "### Changes\n- Active recordings now appear as virtual LiveTV channels in the guide\n- Channels labeled **\u25cf REC: {name}** with priority channel numbers (appear at top)\n- Uses IDirectStreamProvider (same as live TV) for reliable growing playback on all clients\n- EPG program entry shows wall-clock times from the timer (enables time-based seek bar)\n- Reverted .strm approach which caused transcoding/crashes on web\n- .ts file remains in library for post-recording playback\n- Removed the stream.ts HTTP endpoint (replaced by LiveTV approach)\n\n### Known limitations\n- Virtual channels appear on next guide refresh (may take a few minutes after recording starts)\n- Seeking within the recording stream is not yet supported (treated as infinite live stream)",
         "checksum": "3074ce6d2990b8cfeb9c022f125b0346",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.15/jellyfin-xtream_0.9.15.0.zip",
         "targetAbi": "10.11.0.0",
@@ -128,7 +128,7 @@
         "version": "0.9.13.0"
       },
       {
-        "changelog": "## Changes\n\n- **Fix**: Drop .strm approach (caused Jellyfin to transcode HLS→AV1, breaking web)\n- **Dual output**: ffmpeg writes both .ts file (library) + HLS segments (API) simultaneously\n- .ts file = Jellyfin serves directly → works on all clients (iPhone, Android TV, web)\n- HLS API = seekable growing playback at `/Xtream/Recordings/{timerId}/stream.m3u8`\n- After recording: merges HLS→MKV, deletes .ts and segments\n\n## Playback during recording\n- **From Jellyfin library**: plays the growing .ts file (all clients)\n- **Via HLS API**: seekable, continuously growing stream",
+        "changelog": "## Changes\n\n- **Fix**: Drop .strm approach (caused Jellyfin to transcode HLS\u2192AV1, breaking web)\n- **Dual output**: ffmpeg writes both .ts file (library) + HLS segments (API) simultaneously\n- .ts file = Jellyfin serves directly \u2192 works on all clients (iPhone, Android TV, web)\n- HLS API = seekable growing playback at `/Xtream/Recordings/{timerId}/stream.m3u8`\n- After recording: merges HLS\u2192MKV, deletes .ts and segments\n\n## Playback during recording\n- **From Jellyfin library**: plays the growing .ts file (all clients)\n- **Via HLS API**: seekable, continuously growing stream",
         "checksum": "0662d440fe601f8c32e04716de76ea77",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.12/jellyfin-xtream_0.9.12.0.zip",
         "targetAbi": "10.11.0.0",
@@ -144,7 +144,7 @@
         "version": "0.9.11.0"
       },
       {
-        "changelog": "## Changes\n\n- Stop registering recordings with Jellyfin's internal active recordings tracker\n- This prevents Jellyfin from treating in-progress recordings as infinite live streams\n- Recordings are now served as normal video files — seekable, direct-playable, compatible with Android TV\n- MPEG-TS format ensures the file is readable while still being written",
+        "changelog": "## Changes\n\n- Stop registering recordings with Jellyfin's internal active recordings tracker\n- This prevents Jellyfin from treating in-progress recordings as infinite live streams\n- Recordings are now served as normal video files \u2014 seekable, direct-playable, compatible with Android TV\n- MPEG-TS format ensures the file is readable while still being written",
         "checksum": "fc68359c7681323fc8ecf212955289af",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.10/jellyfin-xtream_0.9.10.0.zip",
         "targetAbi": "10.11.0.0",
