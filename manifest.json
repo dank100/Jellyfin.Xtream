@@ -8,12 +8,12 @@
     "owner": "Kevinjil",
     "versions": [
       {
-        "changelog": "- Fix recording EPG: use actual recording start time (not UtcNow which drifted on each refresh)\n- Multiplexer: buffer 3 segments before starting, proper EVENT playlist\n- Recording: Protocol=File with TS file for seekable input\n- Auto-detect max connections from provider API",
-        "checksum": "41137e3a49a4743cf5d225df7254badd",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.36.0/jellyfin-xtream_0.9.36.0.zip",
+        "changelog": "- **Recording seeking**: IsInfiniteStream=false + RunTimeTicks=elapsed time → player treats recording as a seekable video file\n- Fix recording EPG: use actual recording start time\n- Multiplexer: buffer 3 segments before starting, proper EVENT playlist\n- Auto-detect max connections from provider API",
+        "checksum": "c85c6ba3616d4dd4af6441b96a49498c",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.37.0/jellyfin-xtream_0.9.37.0.zip",
         "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T19:06:36Z",
-        "version": "0.9.36.0"
+        "timestamp": "2026-04-24T19:10:46Z",
+        "version": "0.9.37.0"
       },
       {
         "changelog": "## Fixes\n\n**Multiplexer:**\n- Fix 406 error on playlist endpoint — removed `[Produces]` attribute that blocked ASP.NET from serving the HLS playlist. This caused ffmpeg to exit with code 8.\n\n**Recording seekbar:**\n- Serve ffmpeg EVENT playlist as-is (no more `#EXT-X-ENDLIST` injection)\n- HLS.js now treats recording as live → positions at live edge, matching the Jellyfin guide overlay\n- All segments from the beginning are available for backward seeking\n- Use actual schedule times for programme (not stale `DateTime.UtcNow`)",
@@ -230,14 +230,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-20T19:13:13Z",
         "version": "0.9.4.0"
-      },
-      {
-        "changelog": "- Recordings now use ffmpeg MKV remux for seekable in-progress recordings\n- Fix catchup channel timezone display\n- Fix catchup date filter with timezone shift\n- Cache invalidation on timezone config change\n- Recording engine, timer persistence, active recordings UI\n- Per-channel EPG timezone support",
-        "checksum": "95b21242d7cc644d8df793949229b88f",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.2/jellyfin-xtream_0.9.2.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-20T17:45:08Z",
-        "version": "0.9.2.0"
       }
     ]
   }
