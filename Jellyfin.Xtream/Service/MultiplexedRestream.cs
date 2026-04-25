@@ -312,7 +312,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
                 if (!wroteAny)
                 {
-                    await Task.Delay(500, ct).ConfigureAwait(false);
+                    await Task.Delay(100, ct).ConfigureAwait(false);
                 }
             }
         }
