@@ -108,8 +108,8 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         _logger.LogInformation("Opening multiplexed stream for channel {StreamId}", _streamId);
         var buffer = _multiplexer.Subscribe(_streamId, isLive: true);
 
-        // Wait for enough segments so there is data to pump.
-        const int minSegments = 3;
+        // Wait for enough segments so prebuffer can survive the round-robin gap.
+        const int minSegments = 5;
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (buffer.GetSegments().Count < minSegments && DateTime.UtcNow < deadline)
         {
@@ -180,20 +180,22 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     private async Task PumpSegmentsAsync(ChannelBuffer channelBuffer, CancellationToken ct)
     {
         var initialSegments = channelBuffer.GetSegments();
-        int skipCount = Math.Max(0, initialSegments.Count - 3);
-        int lastSegmentIndex = skipCount > 0
-            ? channelBuffer.GetGlobalIndex(skipCount - 1)
-            : -1;
+        // Use all available segments as prebuffer — the initial burst must be large
+        // enough to survive a full round-robin gap (~12s with 2 channels).
+        int lastSegmentIndex = -1;
 
-        // Remuxer: normalizes timestamps across concatenated capture segments.
-        // +igndts+genpts: ignores source DTS (which jump at segment boundaries)
+        // Remuxer normalizes timestamps across concatenated capture segments.
+        // +igndts+genpts: ignores source DTS (which jump at capture boundaries)
         //   and regenerates PTS from frame ordering.
-        // -map 0: copies all streams (video + audio).
+        // -loglevel error suppresses per-frame DTS warnings that overwhelm logging.
+        // -err_detect ignore_err: tolerate corrupt packets at capture boundaries.
         var ffmpegPath = "/usr/lib/jellyfin-ffmpeg/ffmpeg";
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = "-fflags +genpts+igndts"
+            Arguments = "-loglevel error"
+                + " -fflags +genpts+igndts"
+                + " -err_detect ignore_err"
                 + " -f mpegts -i pipe:0"
                 + " -map 0 -c copy"
                 + " -f mpegts -mpegts_flags +resend_headers pipe:1",
@@ -220,7 +222,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                 long totalRead = 0;
                 try
                 {
-                    byte[] readBuf = new byte[65536];
+                    byte[] readBuf = new byte[262144];
                     int bytesRead;
                     while ((bytesRead = await ffmpeg.StandardOutput.BaseStream.ReadAsync(readBuf, ct).ConfigureAwait(false)) > 0)
                     {
@@ -245,7 +247,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                     string? line;
                     while ((line = await ffmpeg.StandardError.ReadLineAsync(ct).ConfigureAwait(false)) != null)
                     {
-                        _logger.LogInformation("Remuxer stderr: {Line}", line);
+                        _logger.LogWarning("Remuxer stderr: {Line}", line);
                     }
                 }
                 catch (OperationCanceledException)
@@ -299,7 +301,6 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                     }
                     catch (FileNotFoundException)
                     {
-                        // Segment was pruned before we could read it — skip it
                         _logger.LogDebug("Segment {Filename} was pruned before pump could read it, skipping", seg.Filename);
                         lastSegmentIndex = globalIndex;
                     }
@@ -343,6 +344,10 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
             if (!ffmpeg.HasExited)
             {
                 ffmpeg.Kill();
+            }
+            else
+            {
+                _logger.LogInformation("Remuxer for channel {StreamId} exited with code {Code}", _streamId, ffmpeg.ExitCode);
             }
         }
     }
