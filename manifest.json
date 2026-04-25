@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Optimize prebuffer and round-robin for stable playback\n\n- Use all available segments as prebuffer for larger initial burst\n- Increase Open wait to 5 segments\n- Reduce yield to 4 for faster round-robin cycling\n- Add -err_detect ignore_err to remuxer\n- Add remuxer exit code logging",
+        "checksum": "2f3d6d1aa3e213d3cc5991787147934a",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.45.0/jellyfin-xtream_0.9.45.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-25T19:15:08Z",
+        "version": "0.9.45.0"
+      },
+      {
         "changelog": "## Changes in v0.9.44.0\n\n- Fix non-monotonic DTS causing playback stutter (removed -break_non_keyframes)\n- Revert probesize from 500K to 1M (eliminates 0-segment captures)\n- Consistent yield at 4 segments (no premature starving yield)\n- 0-segment capture detection and logging\n- Pump poll reduced to 100ms, WaitForExit 500ms\n- All 60 integration tests passing",
         "checksum": "a6bc2d0014c84d8fe949b0760a82a08f",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.44.0/jellyfin-xtream_0.9.44.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-21T20:09:40Z",
         "version": "0.9.8.0"
-      },
-      {
-        "changelog": "Release v0.9.7\n\n**Full Changelog**: https://github.com/dank100/Jellyfin.Xtream/compare/v0.9.6...v0.9.7",
-        "checksum": "06ce73703cb8f766eb524989cd477cee",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.7/jellyfin-xtream_0.9.7.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-21T19:58:27Z",
-        "version": "0.9.7.0"
       }
     ]
   }
