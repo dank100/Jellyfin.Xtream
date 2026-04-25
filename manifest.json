@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix HLS discontinuity tags in recording playlist.\n\n- Insert #EXT-X-DISCONTINUITY between capture rounds (fixes ffmpeg exit 234)\n- 7 integration tests, 34 assertions, all pass",
+        "checksum": "062cc6d3bdf63cd87ae3e55b9ddbf0f6",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.42.0/jellyfin-xtream_0.9.42.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-25T11:44:29Z",
+        "version": "0.9.42.0"
+      },
+      {
         "changelog": "## Changes\n\n- Fix recording playback failure (ffmpeg exit 234): delay library notification until 3 HLS segments are ready so ffprobe has enough data to analyze\n- Fix recording file cleanup so .ts, .strm, and segment files are always removed\n- Add ffprobe/ffmpeg validation to integration tests (28 assertions)",
         "checksum": "b789bbac6f7c2e457e1969bafb203f47",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.41.0/jellyfin-xtream_0.9.41.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-21T05:32:15Z",
         "version": "0.9.5.0"
-      },
-      {
-        "changelog": "## Changes\n- Searchable XMLTV channel input with datalist autocomplete\n- Auto-match XMLTV channels by name similarity\n- External XMLTV EPG source support with per-channel mapping\n- EPG Sources management UI\n- Improved overrides page styling and readability\n- Fix XmltvChannelId persistence\n- SSL and gzip support for XMLTV fetches",
-        "checksum": "91c8c5d12544a7a052ad156b468e9902",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.4/jellyfin-xtream_0.9.4.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-20T19:13:13Z",
-        "version": "0.9.4.0"
       }
     ]
   }
