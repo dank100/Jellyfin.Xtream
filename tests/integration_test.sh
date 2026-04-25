@@ -664,6 +664,99 @@ test_parallel_stream_fairness() {
     pass "Test 8 complete: parallel stream fairness works"
 }
 
+# ===== TEST 9: Staggered start — second recording joins while first is running =====
+# Reproduces the parallel-to-sequential transition bug seen in logs:
+# - One recording starts (parallel mode, 1 channel ≤ maxConnections)
+# - Second recording starts later (forces switch to sequential round-robin)
+# - Both should produce data without 0-segment loops or freezes
+test_staggered_start() {
+    log "=== Test 9: Staggered start — parallel-to-sequential transition ==="
+
+    # Start first recording — this runs in parallel mode (1 channel ≤ maxConnections=1)
+    local timer1
+    timer1=$(start_recording $STREAM_101) || return
+    log "Started first recording: stream $STREAM_101 ($timer1)"
+
+    # Let it capture for 15s in parallel mode, building up segments
+    log "Waiting 15s for first recording to build segments in parallel mode..."
+    sleep 15
+
+    local p1_before seg1_before
+    p1_before=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+    seg1_before=$(echo "$p1_before" | grep -c "#EXTINF:" || true)
+    log "First recording has $seg1_before segments before second recording starts"
+
+    if [ "${seg1_before:-0}" -ge 2 ]; then
+        pass "First recording has segments before transition ($seg1_before)"
+    else
+        fail "First recording has no segments before transition ($seg1_before)"
+        stop_recording "$timer1"
+        return
+    fi
+
+    # Now start second recording — forces transition to sequential round-robin
+    local timer2
+    timer2=$(start_recording $STREAM_102) || return
+    log "Started second recording: stream $STREAM_102 ($timer2) — triggers parallel→sequential transition"
+
+    # Wait for the transition to settle and both streams to get data
+    log "Waiting 30s for both streams to accumulate data after transition..."
+    sleep 30
+
+    local p1 p2 seg1 seg2
+    p1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+    p2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null)
+    seg1=$(echo "$p1" | grep -c "#EXTINF:" || true)
+    seg2=$(echo "$p2" | grep -c "#EXTINF:" || true)
+
+    log "After transition: stream $STREAM_101=$seg1 segs (was $seg1_before), stream $STREAM_102=$seg2 segs"
+
+    # First recording should have grown since the transition
+    if [ "${seg1:-0}" -gt "${seg1_before:-0}" ]; then
+        pass "First recording continued growing after transition ($seg1_before → $seg1)"
+    else
+        fail "First recording stalled after transition ($seg1_before → $seg1)"
+    fi
+
+    # Second recording should have data despite joining late
+    if [ "${seg2:-0}" -ge 2 ]; then
+        pass "Second recording got data after joining ($seg2 segments)"
+    else
+        fail "Second recording got no data after joining ($seg2 segments — possible 0-segment loop)"
+    fi
+
+    # Both should be transcodable
+    local internal_url1="http://localhost:8096/Xtream/Recordings/$timer1/stream.m3u8"
+    local internal_url2="http://localhost:8096/Xtream/Recordings/$timer2/stream.m3u8"
+
+    local out1 exit1
+    out1=$(docker exec jellyfin-dev bash -c "timeout 10 /usr/lib/jellyfin-ffmpeg/ffmpeg \
+        -analyzeduration 200M -probesize 1G -i '$internal_url1' \
+        -t 3 -map 0:v:0 -map 0:a:0 -codec:v:0 libx264 -preset ultrafast -b:v 1000000 \
+        -codec:a:0 aac -b:a 128000 -f mpegts -y /dev/null 2>&1; echo EXIT:\$?" 2>/dev/null)
+    exit1=$(echo "$out1" | grep "EXIT:" | tail -1 | cut -d: -f2)
+
+    local out2 exit2
+    out2=$(docker exec jellyfin-dev bash -c "timeout 10 /usr/lib/jellyfin-ffmpeg/ffmpeg \
+        -analyzeduration 200M -probesize 1G -i '$internal_url2' \
+        -t 3 -map 0:v:0 -map 0:a:0 -codec:v:0 libx264 -preset ultrafast -b:v 1000000 \
+        -codec:a:0 aac -b:a 128000 -f mpegts -y /dev/null 2>&1; echo EXIT:\$?" 2>/dev/null)
+    exit2=$(echo "$out2" | grep "EXIT:" | tail -1 | cut -d: -f2)
+
+    if [ "$exit1" = "0" ] && [ "$exit2" = "0" ]; then
+        pass "Both staggered recordings transcode successfully"
+    else
+        fail "Transcode failed after transition: stream 101 exit=$exit1, stream 102 exit=$exit2"
+    fi
+
+    # Cleanup
+    stop_recording "$timer1"
+    stop_recording "$timer2"
+    sleep 3
+
+    pass "Test 9 complete: staggered start transition works"
+}
+
 # ===== MAIN =====
 log "Starting integration tests"
 log "Base URL: $BASE_URL"
@@ -704,6 +797,11 @@ echo ""
 stop_all_recordings
 sleep 5
 test_parallel_stream_fairness
+echo ""
+# Ensure clean state before staggered start test
+stop_all_recordings
+sleep 5
+test_staggered_start
 echo ""
 
 log "============================="
