@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "### Changes\n- **Persistent parallel captures**: Replaced blocking Task.WhenAll with per-channel capture tasks that start/stop dynamically\n- **Fair round-robin yield**: Reduced yield thresholds (starvation: 2, default: 3 segments) to account for ~8s ffmpeg startup overhead\n- **Parallel→sequential transition**: Clean handoff when channels are added/removed\n- **Lifecycle cleanup**: Capture tasks properly cancelled on unsubscribe, stop, and dispose\n\n### Test coverage (45 assertions)\n- Tests 1-6: Single/dual recording, keepalive, HLS playback, ffprobe/ffmpeg validation\n- Test 7: HLS discontinuity tags during round-robin\n- Test 8: Parallel stream fairness (segment ratio within 3:1)\n- Test 9: Staggered start — parallel-to-sequential transition\n\nAll tests pass with maxConnections=1 and real DW News HLS streams.",
+        "checksum": "c5dc2b15d290330e589d5100cf7eb79e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.43.0/jellyfin-xtream_0.9.43.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-25T14:44:33Z",
+        "version": "0.9.43.0"
+      },
+      {
         "changelog": "Fix HLS discontinuity tags in recording playlist.\n\n- Insert #EXT-X-DISCONTINUITY between capture rounds (fixes ffmpeg exit 234)\n- 7 integration tests, 34 assertions, all pass",
         "checksum": "062cc6d3bdf63cd87ae3e55b9ddbf0f6",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.42.0/jellyfin-xtream_0.9.42.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-21T19:42:23Z",
         "version": "0.9.6.0"
-      },
-      {
-        "changelog": "## Changes\n- Fix recording playback on Android TV\n- Switch to fragmented MP4 (from MKV) for active recording playback\n- Stream copy instead of re-encoding (zero CPU, instant availability)\n- Add aac_adtstoasc bitstream filter for MPEG-TS compatibility\n- Fix library scan trigger timing\n- Better Android/iOS seeking with default_base_moof flag",
-        "checksum": "dfeca4812899879390d4c788f7b4549e",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.5/jellyfin-xtream_0.9.5.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-21T05:32:15Z",
-        "version": "0.9.5.0"
       }
     ]
   }
