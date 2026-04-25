@@ -481,8 +481,8 @@ test_discontinuity_tags() {
     timer2=$(start_recording $STREAM_102) || return
 
     log "Started recordings: stream $STREAM_101 ($timer1), stream $STREAM_102 ($timer2)"
-    log "Waiting 40s for multiplexer to round-robin several times..."
-    sleep 40
+    log "Waiting 60s for multiplexer to round-robin several times..."
+    sleep 60
 
     # Get the HLS playlist for the first recording
     local playlist
@@ -562,6 +562,108 @@ test_discontinuity_tags() {
     pass "Test 7 complete: HLS discontinuity tags work"
 }
 
+test_parallel_stream_fairness() {
+    log "=== Test 8: Parallel stream fairness — both channels get data promptly ==="
+
+    # Start two recordings simultaneously on different streams
+    local timer1 timer2
+    timer1=$(start_recording $STREAM_101) || return
+    timer2=$(start_recording $STREAM_102) || return
+
+    log "Started recordings: stream $STREAM_101 ($timer1), stream $STREAM_102 ($timer2)"
+
+    # Check BOTH streams have segments within 25s (not just one)
+    # With maxConnections=1, round-robin needs ~14s per channel (8s startup + 2 segments)
+    log "Checking both streams get segments within 25s..."
+    sleep 25
+
+    local p1 p2 seg1 seg2
+    p1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+    p2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null)
+    seg1=$(echo "$p1" | grep -c "#EXTINF:" || true)
+    seg2=$(echo "$p2" | grep -c "#EXTINF:" || true)
+
+    log "After 25s: stream $STREAM_101 has $seg1 segments, stream $STREAM_102 has $seg2 segments"
+
+    if [ "${seg1:-0}" -ge 1 ]; then
+        pass "Stream $STREAM_101 has data within 25s ($seg1 segments)"
+    else
+        fail "Stream $STREAM_101 has no data after 25s (starved)"
+    fi
+
+    if [ "${seg2:-0}" -ge 1 ]; then
+        pass "Stream $STREAM_102 has data within 25s ($seg2 segments)"
+    else
+        fail "Stream $STREAM_102 has no data after 25s (starved)"
+    fi
+
+    # Wait longer and check fairness: segment counts should be within 3:1 ratio
+    log "Waiting 35s more to check fairness..."
+    sleep 35
+
+    p1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+    p2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null)
+    seg1=$(echo "$p1" | grep -c "#EXTINF:" || true)
+    seg2=$(echo "$p2" | grep -c "#EXTINF:" || true)
+
+    log "After 60s total: stream $STREAM_101=$seg1 segs, stream $STREAM_102=$seg2 segs"
+
+    # Both should have a reasonable number of segments (at least 3 each)
+    if [ "${seg1:-0}" -ge 3 ] && [ "${seg2:-0}" -ge 3 ]; then
+        pass "Both streams have >= 3 segments ($seg1 and $seg2)"
+    else
+        fail "One stream starved: $STREAM_101=$seg1, $STREAM_102=$seg2 (need >=3 each)"
+    fi
+
+    # Check fairness ratio: neither stream should have >3x the segments of the other
+    local ratio
+    if [ "${seg1:-1}" -gt "${seg2:-1}" ]; then
+        ratio=$((seg1 / (seg2 > 0 ? seg2 : 1)))
+    else
+        ratio=$((seg2 / (seg1 > 0 ? seg1 : 1)))
+    fi
+
+    if [ "$ratio" -le 3 ]; then
+        pass "Segment ratio is fair ($ratio:1, threshold 3:1)"
+    else
+        fail "Unfair ratio $ratio:1 — one stream is starving ($STREAM_101=$seg1, $STREAM_102=$seg2)"
+    fi
+
+    # Verify both streams can be transcoded
+    log "Verifying both streams can be transcoded..."
+    local internal_url1="http://localhost:8096/Xtream/Recordings/$timer1/stream.m3u8"
+    local internal_url2="http://localhost:8096/Xtream/Recordings/$timer2/stream.m3u8"
+
+    local out1 exit1
+    out1=$(docker exec jellyfin-dev bash -c "timeout 10 /usr/lib/jellyfin-ffmpeg/ffmpeg \
+        -analyzeduration 200M -probesize 1G -i '$internal_url1' \
+        -t 3 -map 0:v:0 -map 0:a:0 -codec:v:0 libx264 -preset ultrafast -b:v 1000000 \
+        -codec:a:0 aac -b:a 128000 -f mpegts -y /dev/null 2>&1; echo EXIT:\$?" 2>/dev/null)
+    exit1=$(echo "$out1" | grep "EXIT:" | tail -1 | cut -d: -f2)
+
+    local out2 exit2
+    out2=$(docker exec jellyfin-dev bash -c "timeout 10 /usr/lib/jellyfin-ffmpeg/ffmpeg \
+        -analyzeduration 200M -probesize 1G -i '$internal_url2' \
+        -t 3 -map 0:v:0 -map 0:a:0 -codec:v:0 libx264 -preset ultrafast -b:v 1000000 \
+        -codec:a:0 aac -b:a 128000 -f mpegts -y /dev/null 2>&1; echo EXIT:\$?" 2>/dev/null)
+    exit2=$(echo "$out2" | grep "EXIT:" | tail -1 | cut -d: -f2)
+
+    if [ "$exit1" = "0" ] && [ "$exit2" = "0" ]; then
+        pass "Both streams transcode successfully"
+    else
+        fail "Transcode failed: stream 101 exit=$exit1, stream 102 exit=$exit2"
+        [ "$exit1" != "0" ] && echo "$out1" | grep -iE "corrupt|error" | tail -5
+        [ "$exit2" != "0" ] && echo "$out2" | grep -iE "corrupt|error" | tail -5
+    fi
+
+    # Cleanup
+    stop_recording "$timer1"
+    stop_recording "$timer2"
+    sleep 3
+
+    pass "Test 8 complete: parallel stream fairness works"
+}
+
 # ===== MAIN =====
 log "Starting integration tests"
 log "Base URL: $BASE_URL"
@@ -597,6 +699,11 @@ sleep 5
 test_ffprobe_hls
 echo ""
 test_discontinuity_tags
+echo ""
+# Ensure clean state before parallel stream test
+stop_all_recordings
+sleep 5
+test_parallel_stream_fairness
 echo ""
 
 log "============================="

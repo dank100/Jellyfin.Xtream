@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -39,6 +40,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     private readonly IServerConfigurationManager _config;
     private readonly IXtreamClient _xtreamClient;
     private readonly ConcurrentDictionary<int, ChannelBuffer> _channels = new();
+    private readonly ConcurrentDictionary<int, (Task Task, CancellationTokenSource Cts)> _parallelCaptures = new();
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private bool _disposed;
@@ -136,6 +138,9 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             buffer.SubscriberCount = 0;
             buffer.State = ChannelBufferState.Idle;
 
+            // Stop any parallel capture running for this channel.
+            StopParallelCapture(streamId);
+
             if (_channels.TryRemove(streamId, out var removed))
             {
                 removed.Dispose();
@@ -184,6 +189,9 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             }
         }
 
+        // Stop all parallel captures
+        StopAllParallelCaptures();
+
         // Clean up all buffers
         foreach (var kvp in _channels)
         {
@@ -202,6 +210,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         }
 
         _disposed = true;
+        StopAllParallelCaptures();
         _cts?.Dispose();
 
         foreach (var kvp in _channels)
@@ -253,27 +262,120 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             int sliceSeconds = Math.Max(1, pluginConfig.MultiplexSliceSeconds);
             int retentionSeconds = Math.Max(10, pluginConfig.MultiplexRetentionSeconds);
 
-            foreach (var buffer in activeChannels)
+            if (activeChannels.Count <= _maxConnections)
             {
-                if (ct.IsCancellationRequested)
+                // Enough connections for all — use persistent parallel captures.
+                // Start a capture task for any channel that doesn't already have one.
+                var activeIds = new HashSet<int>(activeChannels.Select(b => b.StreamId));
+
+                // Clean up completed/stale capture tasks first.
+                foreach (var sid in _parallelCaptures.Keys.ToList())
                 {
-                    break;
+                    if (_parallelCaptures.TryGetValue(sid, out var existing) && existing.Task.IsCompleted)
+                    {
+                        _parallelCaptures.TryRemove(sid, out _);
+                        existing.Cts.Dispose();
+                    }
                 }
 
-                try
+                foreach (var buffer in activeChannels)
                 {
-                    await CaptureStreamAsync(buffer, sliceSeconds, retentionSeconds, ct).ConfigureAwait(false);
+                    int sid = buffer.StreamId;
+                    if (!_parallelCaptures.ContainsKey(sid))
+                    {
+                        var captureCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        var task = Task.Run(
+                            () => ParallelCaptureLoopAsync(buffer, sliceSeconds, retentionSeconds, captureCts.Token),
+                            captureCts.Token);
+                        _parallelCaptures[sid] = (task, captureCts);
+                        _logger.LogInformation("Started parallel capture task for stream {StreamId}", sid);
+                    }
                 }
-                catch (OperationCanceledException)
+
+                // Stop captures for channels that are no longer active.
+                foreach (var sid in _parallelCaptures.Keys.ToList())
                 {
-                    break;
+                    if (!activeIds.Contains(sid))
+                    {
+                        StopParallelCapture(sid);
+                    }
                 }
-                catch (Exception ex)
+
+                // Sleep briefly then re-check for channel changes.
+                await Task.Delay(1000, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                // More channels than connections — stop any parallel captures
+                // and fall back to sequential round-robin with fair scheduling.
+                StopAllParallelCaptures();
+
+                foreach (var buffer in activeChannels)
                 {
-                    _logger.LogWarning(ex, "Error in continuous capture for stream {StreamId}", buffer.StreamId);
-                    await Task.Delay(2000, ct).ConfigureAwait(false);
+                    if (ct.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    try
+                    {
+                        await CaptureStreamAsync(buffer, sliceSeconds, retentionSeconds, ct).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error in continuous capture for stream {StreamId}", buffer.StreamId);
+                        await Task.Delay(2000, ct).ConfigureAwait(false);
+                    }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Long-running capture loop for a single channel in parallel mode.
+    /// Restarts ffmpeg if it exits unexpectedly.
+    /// </summary>
+    private async Task ParallelCaptureLoopAsync(ChannelBuffer buffer, int sliceSeconds, int retentionSeconds, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && buffer.SubscriberCount > 0)
+        {
+            try
+            {
+                await CaptureStreamAsync(buffer, sliceSeconds, retentionSeconds, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Parallel capture error for stream {StreamId}, restarting in 2s", buffer.StreamId);
+                await Task.Delay(2000, ct).ConfigureAwait(false);
+            }
+        }
+
+        _logger.LogInformation("Parallel capture loop ended for stream {StreamId}", buffer.StreamId);
+    }
+
+    private void StopParallelCapture(int streamId)
+    {
+        if (_parallelCaptures.TryRemove(streamId, out var entry))
+        {
+            _logger.LogInformation("Stopping parallel capture for stream {StreamId}", streamId);
+            entry.Cts.Cancel();
+            entry.Cts.Dispose();
+        }
+    }
+
+    private void StopAllParallelCaptures()
+    {
+        foreach (var sid in _parallelCaptures.Keys.ToList())
+        {
+            StopParallelCapture(sid);
         }
     }
 
@@ -424,23 +526,22 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                         kvp.Value.LiveViewerCount > 0
                         && kvp.Value.StreamId != buffer.StreamId);
 
-                    // Live channels get 4x more segments than recording-only channels.
-                    // If another channel has live viewers waiting, yield sooner.
+                    // Yield quickly to keep round-robin responsive.
+                    // With ~8s ffmpeg startup overhead per capture, fewer segments
+                    // per yield means faster cycling between channels.
                     int minSegments;
                     if (hasStarvingChannel)
                     {
-                        minSegments = 1;
+                        minSegments = 2;
                     }
                     else if (buffer.LiveViewerCount > 0)
                     {
-                        // This channel has live viewers — capture generously.
-                        // Yield sooner if another live channel is waiting.
-                        minSegments = hasLiveWaiting ? 10 : 15;
+                        minSegments = 3;
                     }
                     else
                     {
-                        // Recording-only channel — yield quickly to prioritize live.
-                        minSegments = hasLiveWaiting ? 3 : 6;
+                        // Recording-only: yield quickly so live channels aren't starved.
+                        minSegments = hasLiveWaiting ? 2 : 3;
                     }
 
                     if (completedCount >= minSegments)
