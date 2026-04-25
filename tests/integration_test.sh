@@ -101,8 +101,8 @@ test_single_recording() {
     timer_id=$(start_recording $STREAM_101) || return
 
     log "Started recording on stream $STREAM_101, timer: $timer_id"
-    log "Waiting 15s for segments to accumulate..."
-    sleep 15
+    log "Waiting 25s for segments to accumulate..."
+    sleep 25
 
     # Verify recording is active
     local active
@@ -256,8 +256,8 @@ test_hls_playback() {
     timer_id=$(start_recording $STREAM_101) || return
 
     log "Started recording on stream $STREAM_101, timer: $timer_id"
-    log "Waiting 20s for HLS segments..."
-    sleep 20
+    log "Waiting 25s for HLS segments..."
+    sleep 25
 
     # Verify the playlist endpoint returns a valid m3u8
     local playlist_url="$API/Recordings/$timer_id/stream.m3u8"
@@ -465,6 +465,89 @@ except Exception as e:
     pass "Test 6 complete: ffprobe/ffmpeg HLS validation works"
 }
 
+test_discontinuity_tags() {
+    log "=== Test 7: HLS discontinuity tags in recording playlist ==="
+    log "Starting TWO recordings so the multiplexer round-robins"
+
+    # Start two recordings on different streams to force round-robin
+    local timer1 timer2
+    timer1=$(start_recording $STREAM_101) || return
+    timer2=$(start_recording $STREAM_102) || return
+
+    log "Started recordings: stream $STREAM_101 ($timer1), stream $STREAM_102 ($timer2)"
+    log "Waiting 40s for multiplexer to round-robin several times..."
+    sleep 40
+
+    # Get the HLS playlist for the first recording
+    local playlist
+    playlist=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+
+    if [ "$http_code" = "200" ]; then
+        pass "Recording 1 HLS playlist returns 200"
+    else
+        fail "Recording 1 HLS playlist returned $http_code"
+        stop_recording "$timer1"; stop_recording "$timer2"
+        return
+    fi
+
+    # Count segments and discontinuity tags
+    local seg_count disc_count
+    seg_count=$(echo "$playlist" | grep -c "#EXTINF:" || true)
+    disc_count=$(echo "$playlist" | grep -c "^#EXT-X-DISCONTINUITY$" || true)
+
+    log "Playlist has $seg_count segments and $disc_count discontinuity tags"
+
+    if [ "$seg_count" -ge 6 ]; then
+        pass "Recording has $seg_count segments (enough for round-robin)"
+    else
+        fail "Only $seg_count segments (expected >=6 after 40s with round-robin)"
+    fi
+
+    if [ "$disc_count" -ge 1 ]; then
+        pass "Playlist contains $disc_count #EXT-X-DISCONTINUITY tags"
+    else
+        fail "No #EXT-X-DISCONTINUITY tags found (round-robin should cause gaps)"
+    fi
+
+    # Also check the second recording
+    local playlist2 disc2
+    playlist2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null)
+    disc2=$(echo "$playlist2" | grep -c "^#EXT-X-DISCONTINUITY$" || true)
+    local seg2
+    seg2=$(echo "$playlist2" | grep -c "#EXTINF:" || true)
+
+    log "Recording 2: $seg2 segments, $disc2 discontinuity tags"
+
+    if [ "$disc2" -ge 1 ]; then
+        pass "Recording 2 also has discontinuity tags ($disc2)"
+    else
+        fail "Recording 2 missing discontinuity tags"
+    fi
+
+    # Verify ffmpeg can transcode the playlist WITH discontinuity tags
+    log "Verifying ffmpeg can transcode playlist with discontinuity tags..."
+    local ffmpeg_ok
+    ffmpeg_ok=$(docker exec jellyfin-dev bash -c "timeout 8 /usr/lib/jellyfin-ffmpeg/ffmpeg -analyzeduration 200M -probesize 1G -i 'http://localhost:8096/Xtream/Recordings/$timer1/stream.m3u8' -t 5 -c copy -f mpegts -y /dev/null 2>&1; echo EXIT:\$?" 2>/dev/null)
+    local ffmpeg_exit
+    ffmpeg_exit=$(echo "$ffmpeg_ok" | grep "EXIT:" | tail -1 | cut -d: -f2)
+
+    if [ "$ffmpeg_exit" = "0" ]; then
+        pass "ffmpeg transcodes discontinuous recording OK"
+    else
+        fail "ffmpeg failed on discontinuous recording (exit $ffmpeg_exit)"
+        echo "$ffmpeg_ok" | tail -15
+    fi
+
+    # Cleanup
+    stop_recording "$timer1"
+    stop_recording "$timer2"
+    sleep 3
+
+    pass "Test 7 complete: HLS discontinuity tags work"
+}
+
 # ===== MAIN =====
 log "Starting integration tests"
 log "Base URL: $BASE_URL"
@@ -486,9 +569,17 @@ test_two_recordings
 echo ""
 test_recording_stops
 echo ""
+# Ensure clean state before HLS tests
+stop_all_recordings
+sleep 5
 test_hls_playback
 echo ""
+# Ensure clean state before ffprobe test
+stop_all_recordings
+sleep 5
 test_ffprobe_hls
+echo ""
+test_discontinuity_tags
 echo ""
 
 log "============================="

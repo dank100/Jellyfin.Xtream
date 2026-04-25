@@ -315,6 +315,7 @@ public class RecordingEngine : IHostedService, IDisposable
             // This avoids running ffmpeg as an HLS reader (which fails during round-robin gaps).
             int lastSeenGlobal = -1;
             int recSegCount = 0;
+            DateTime? lastSegTime = null;
             var hlsLines = new List<string>
             {
                 "#EXTM3U",
@@ -363,6 +364,15 @@ public class RecordingEngine : IHostedService, IDisposable
                     string recSegPath = Path.Combine(segmentDir, recSegName);
                     await File.WriteAllBytesAsync(recSegPath, data, ct).ConfigureAwait(false);
                     recSegCount++;
+
+                    // Insert discontinuity when there's a time gap between captures
+                    // (e.g. multiplexer round-robin yielded to another channel)
+                    if (lastSegTime.HasValue && (seg.CapturedUtc - lastSegTime.Value).TotalSeconds > seg.DurationSeconds * 2)
+                    {
+                        hlsLines.Add("#EXT-X-DISCONTINUITY");
+                    }
+
+                    lastSegTime = seg.CapturedUtc;
 
                     // Update HLS playlist
                     hlsLines.Add($"#EXTINF:{seg.DurationSeconds:F3},");
