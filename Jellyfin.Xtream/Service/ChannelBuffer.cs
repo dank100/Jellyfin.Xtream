@@ -30,6 +30,7 @@ public sealed class ChannelBuffer : IDisposable
     private readonly object _lock = new();
     private readonly List<SegmentInfo> _segments = [];
     private int _segmentCounter;
+    private int _prunedCount;
     private bool _disposed;
 
     /// <summary>
@@ -60,8 +61,18 @@ public sealed class ChannelBuffer : IDisposable
     /// <summary>Gets or sets the subscriber (viewer) count.</summary>
     public int SubscriberCount { get; set; }
 
+    /// <summary>Gets or sets the number of live TV viewers (subset of subscribers).</summary>
+    public int LiveViewerCount { get; set; }
+
     /// <summary>Gets the current discontinuity sequence number for the HLS playlist.</summary>
     public int DiscontinuitySequence { get; private set; }
+
+    /// <summary>
+    /// Gets or sets the accumulated timestamp offset in seconds.
+    /// Each successful capture advances this by the segment's actual duration,
+    /// so the next capture's <c>-output_ts_offset</c> produces continuous PTS.
+    /// </summary>
+    public double TsOffsetSeconds { get; set; }
 
     /// <summary>
     /// Allocates the next segment filename for this channel.
@@ -111,6 +122,7 @@ public sealed class ChannelBuffer : IDisposable
             foreach (var seg in expired)
             {
                 _segments.Remove(seg);
+                _prunedCount++;
                 var path = Path.Combine(SegmentDir, seg.Filename);
                 if (File.Exists(path))
                 {
@@ -134,6 +146,19 @@ public sealed class ChannelBuffer : IDisposable
         lock (_lock)
         {
             return _segments.ToList();
+        }
+    }
+
+    /// <summary>
+    /// Converts a local segment list index to a global index that accounts for pruned segments.
+    /// </summary>
+    /// <param name="localIndex">Index into the current segment list.</param>
+    /// <returns>The global segment index.</returns>
+    public int GetGlobalIndex(int localIndex)
+    {
+        lock (_lock)
+        {
+            return _prunedCount + localIndex;
         }
     }
 
@@ -178,8 +203,7 @@ public sealed class ChannelBuffer : IDisposable
             "#EXTM3U",
             $"#EXT-X-VERSION:3",
             $"#EXT-X-TARGETDURATION:{Math.Ceiling(targetDuration):F0}",
-            "#EXT-X-MEDIA-SEQUENCE:0",
-            "#EXT-X-PLAYLIST-TYPE:EVENT",
+            $"#EXT-X-MEDIA-SEQUENCE:{_prunedCount}",
         };
 
         bool needDiscontinuity = false;

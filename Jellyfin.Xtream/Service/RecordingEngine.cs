@@ -48,6 +48,7 @@ public class RecordingEngine : IHostedService, IDisposable
     private readonly IServerConfigurationManager _config;
     private readonly IServerApplicationHost _appHost;
     private readonly ILibraryMonitor _libraryMonitor;
+    private readonly ConnectionMultiplexer _multiplexer;
     private readonly ConcurrentDictionary<string, ActiveRecording> _activeRecordings = new();
     private readonly ConcurrentDictionary<string, CompletedRecording> _completedRecordings = new();
     // HLS directories that are still being served (kept through merge so viewers aren't interrupted)
@@ -66,7 +67,8 @@ public class RecordingEngine : IHostedService, IDisposable
     /// <param name="config">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
     /// <param name="appHost">Instance of the <see cref="IServerApplicationHost"/> interface.</param>
     /// <param name="libraryMonitor">Instance of the <see cref="ILibraryMonitor"/> interface.</param>
-    public RecordingEngine(IHttpClientFactory httpClientFactory, ILogger<RecordingEngine> logger, LiveTvService liveTvService, IServerConfigurationManager config, IServerApplicationHost appHost, ILibraryMonitor libraryMonitor)
+    /// <param name="multiplexer">Instance of the <see cref="ConnectionMultiplexer"/> class.</param>
+    public RecordingEngine(IHttpClientFactory httpClientFactory, ILogger<RecordingEngine> logger, LiveTvService liveTvService, IServerConfigurationManager config, IServerApplicationHost appHost, ILibraryMonitor libraryMonitor, ConnectionMultiplexer multiplexer)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
@@ -74,6 +76,7 @@ public class RecordingEngine : IHostedService, IDisposable
         _config = config;
         _appHost = appHost;
         _libraryMonitor = libraryMonitor;
+        _multiplexer = multiplexer;
     }
 
     /// <summary>
@@ -154,6 +157,16 @@ public class RecordingEngine : IHostedService, IDisposable
         if (_activeRecordings.TryRemove(timerId, out var recording))
         {
             recording.Cancel();
+
+            // Mark as completed so CheckTimers won't re-start it
+            _completedRecordings[timerId] = new CompletedRecording
+            {
+                TimerId = timerId,
+                Timer = recording.Timer,
+                FilePath = recording.FilePath ?? string.Empty,
+                CompletedAt = DateTime.UtcNow,
+            };
+
             _logger.LogInformation("Recording cancelled for timer {TimerId}", timerId);
         }
     }
@@ -249,131 +262,129 @@ public class RecordingEngine : IHostedService, IDisposable
     private async Task RecordStreamAsync(ActiveRecording recording)
     {
         var timer = recording.Timer;
-        string baseName = $"{timer.Name}_{timer.StartDate:yyyyMMdd}_{timer.StartDate:HH.mm}-{timer.EndDate:HH.mm}"
+        string baseName = $"{timer.Name}_{timer.StartDate:yyyyMMdd}_{timer.StartDate:HH.mm}-{timer.EndDate:HH.mm}_rec{recording.StartedUtc.ToLocalTime():HH.mm}"
             .Replace(' ', '_')
             .Replace('/', '-')
             .Replace('\\', '-');
 
-        // TS file goes directly in recordings dir so Jellyfin picks it up in the library
-        string tsPath = Path.Combine(RecordingsPath, baseName + ".ts");
+        // TS file is hidden (dot-prefix) to prevent Jellyfin's library manager
+        // from detecting and deleting it during scans.
+        string tsPath = Path.Combine(RecordingsPath, "." + baseName + ".ts");
 
         // Each recording gets a hidden subdirectory for HLS segments (seeking)
         string segmentDir = Path.Combine(RecordingsPath, $".rec_{timer.Id}");
         Directory.CreateDirectory(segmentDir);
         string playlistPath = Path.Combine(segmentDir, HlsPlaylistName);
-        string segmentPattern = Path.Combine(segmentDir, "seg_%05d.ts");
 
-        string hlsApiUrl = $"{_appHost.GetSmartApiUrl(IPAddress.Any)}/Xtream/Recordings/{timer.Id}/stream.m3u8";
+        string tsApiUrl = $"{_appHost.GetSmartApiUrl(IPAddress.Any)}/Xtream/Recordings/{timer.Id}/stream.ts";
+        string strmPath = Path.Combine(RecordingsPath, baseName + ".strm");
 
         _logger.LogInformation("Recording started: {Name} -> {TsPath}", timer.Name, tsPath);
-        _logger.LogInformation("HLS playback URL: {Url}", hlsApiUrl);
         recording.FilePath = segmentDir;
         recording.TsFilePath = tsPath;
+        recording.StrmFilePath = strmPath;
+
+        // Write .strm file pointing to our TS endpoint. The endpoint serves the
+        // current file snapshot so ffprobe completes quickly.
+        await File.WriteAllTextAsync(strmPath, tsApiUrl).ConfigureAwait(false);
 
         try
         {
-            // Build the stream URL
-            PluginConfiguration config = Plugin.Instance.Configuration;
+            // Subscribe to the multiplexer so it captures this channel
             Guid guid = Guid.Parse(timer.ChannelId);
             StreamService.FromGuid(guid, out int _, out int streamId, out int _, out int _);
-            string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{streamId}";
 
-            // Dual output: TS file for Jellyfin library + HLS segments for seeking/growing playback
-            var ffmpegPath = GetFfmpegPath();
-            var psi = new ProcessStartInfo
-            {
-                FileName = ffmpegPath,
-                Arguments = $"-i \"{url}\" -map 0 -dn -sn -ignore_unknown -fflags +genpts+igndts"
-                    + " -c:v copy -c:a aac -b:a 192k"
-                    + $" -f mpegts -y \"{tsPath}\""
-                    + " -map 0 -dn -sn -c:v copy -c:a aac -b:a 192k"
-                    + $" -f hls -hls_time 6 -hls_playlist_type event -hls_list_size 0"
-                    + $" -hls_segment_type mpegts -hls_flags append_list+program_date_time"
-                    + $" -hls_segment_filename \"{segmentPattern}\" -y \"{playlistPath}\"",
-                UseShellExecute = false,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                CreateNoWindow = true,
-            };
+            var muxBuffer = _multiplexer.Subscribe(streamId);
+            recording.MuxStreamId = streamId;
 
-            if (!string.IsNullOrEmpty(config.UserAgent))
+            // Wait for the multiplexer to have segments
+            _logger.LogInformation("Recording waiting for multiplexer segments on stream {StreamId}", streamId);
+            for (int i = 0; i < 60; i++)
             {
-                psi.Arguments = $"-user_agent \"{config.UserAgent}\" " + psi.Arguments;
+                if (muxBuffer.State == ChannelBufferState.Ready)
+                {
+                    break;
+                }
+
+                await Task.Delay(1000, recording.CancellationToken).ConfigureAwait(false);
             }
 
-            _logger.LogInformation("Starting ffmpeg: {Args}", psi.Arguments);
+            _logger.LogInformation("Recording from multiplexer segments for stream {StreamId}", streamId);
 
-            using var process = Process.Start(psi)
-                ?? throw new InvalidOperationException("Failed to start ffmpeg process");
-
-            // Ask ffmpeg to quit cleanly so the streams are flushed.
-            recording.CancellationToken.Register(() =>
+            // Directly copy multiplexer segments into the TS file and our own HLS directory.
+            // This avoids running ffmpeg as an HLS reader (which fails during round-robin gaps).
+            int lastSeenGlobal = -1;
+            int recSegCount = 0;
+            var hlsLines = new List<string>
             {
-                try
-                {
-                    if (!process.HasExited)
-                    {
-                        process.StandardInput.WriteLine("q");
-                        process.StandardInput.Flush();
+                "#EXTM3U",
+                "#EXT-X-VERSION:3",
+                "#EXT-X-TARGETDURATION:6",
+                "#EXT-X-MEDIA-SEQUENCE:0",
+                "#EXT-X-PLAYLIST-TYPE:EVENT",
+            };
+            bool libraryNotified = false;
 
-                        if (!process.WaitForExit(5000))
-                        {
-                            process.Kill(true);
-                        }
+            using var tsStream = new FileStream(tsPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 81920);
+            var ct = recording.CancellationToken;
+
+            while (!ct.IsCancellationRequested)
+            {
+                var segments = muxBuffer.GetSegments();
+                bool foundNew = false;
+
+                for (int si = 0; si < segments.Count; si++)
+                {
+                    var seg = segments[si];
+                    int globalIdx = muxBuffer.GetGlobalIndex(si);
+                    if (globalIdx <= lastSeenGlobal)
+                    {
+                        continue;
+                    }
+
+                    lastSeenGlobal = globalIdx;
+                    foundNew = true;
+
+                    string srcPath = Path.Combine(muxBuffer.SegmentDir, seg.Filename);
+                    if (!File.Exists(srcPath))
+                    {
+                        continue;
+                    }
+
+                    // Read segment data
+                    byte[] data = await File.ReadAllBytesAsync(srcPath, ct).ConfigureAwait(false);
+
+                    // Append to the growing TS file
+                    await tsStream.WriteAsync(data, ct).ConfigureAwait(false);
+                    await tsStream.FlushAsync(ct).ConfigureAwait(false);
+
+                    // Copy segment to our own HLS directory
+                    string recSegName = $"seg_{recSegCount:D5}.ts";
+                    string recSegPath = Path.Combine(segmentDir, recSegName);
+                    await File.WriteAllBytesAsync(recSegPath, data, ct).ConfigureAwait(false);
+                    recSegCount++;
+
+                    // Update HLS playlist
+                    hlsLines.Add($"#EXTINF:{seg.DurationSeconds:F3},");
+                    hlsLines.Add(recSegName);
+                    await File.WriteAllLinesAsync(playlistPath, hlsLines, ct).ConfigureAwait(false);
+
+                    if (!libraryNotified && tsStream.Length > 0)
+                    {
+                        libraryNotified = true;
+                        _libraryMonitor.ReportFileSystemChanged(strmPath);
+                        TriggerMediaScan();
+                        TriggerGuideRefresh();
+                        _logger.LogInformation("Library notified of new recording: {Path}", strmPath);
                     }
                 }
-                catch (ObjectDisposedException)
-                {
-                }
-                catch (InvalidOperationException)
-                {
-                }
-            });
 
-            // Read stderr for logging
-            _ = Task.Run(async () =>
-            {
-                try
+                if (!foundNew)
                 {
-                    string? line;
-                    while ((line = await process.StandardError.ReadLineAsync(recording.CancellationToken).ConfigureAwait(false)) != null)
-                    {
-                        _logger.LogDebug("ffmpeg: {Line}", line);
-                    }
+                    // No new segments yet — wait briefly before checking again.
+                    // The multiplexer round-robins between channels, so gaps are normal.
+                    await Task.Delay(500, ct).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
-                {
-                }
-            });
-
-            // Wait for the TS file to appear, then notify the library
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    for (int i = 0; i < 30; i++)
-                    {
-                        await Task.Delay(1000, recording.CancellationToken).ConfigureAwait(false);
-                        if (File.Exists(tsPath) && new FileInfo(tsPath).Length > 0)
-                        {
-                            _libraryMonitor.ReportFileSystemChanged(tsPath);
-                            TriggerMediaScan();
-                            TriggerGuideRefresh();
-                            _logger.LogInformation("Library notified of new recording: {Path}", tsPath);
-                            return;
-                        }
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                }
-            });
-
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-
-            if (process.ExitCode != 0 && !recording.CancellationToken.IsCancellationRequested)
-            {
-                _logger.LogWarning("ffmpeg exited with code {Code}", process.ExitCode);
             }
         }
         catch (OperationCanceledException)
@@ -386,6 +397,12 @@ public class RecordingEngine : IHostedService, IDisposable
         }
         finally
         {
+            // Unsubscribe from the multiplexer
+            if (recording.MuxStreamId.HasValue)
+            {
+                _multiplexer.Unsubscribe(recording.MuxStreamId.Value);
+            }
+
             // Keep HLS directory servable during merge so active viewers aren't interrupted
             _servableHlsDirs[timer.Id] = segmentDir;
             _servableTsPaths[timer.Id] = tsPath;
@@ -423,6 +440,19 @@ public class RecordingEngine : IHostedService, IDisposable
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Failed to clean up TS file: {Path}", tsPath);
+                    }
+                }
+
+                // Remove the .strm file — the .mkv is the final library item
+                if (File.Exists(strmPath))
+                {
+                    try
+                    {
+                        File.Delete(strmPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to clean up .strm file: {Path}", strmPath);
                     }
                 }
 
@@ -612,25 +642,105 @@ public class RecordingEngine : IHostedService, IDisposable
         {
             string recPath = RecordingsPath;
 
-            // Remove orphaned .strm files left from previous interrupted recordings
+            // Build a set of paths that belong to active recordings — don't touch these
+            var activePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in _activeRecordings)
+            {
+                var rec = kvp.Value;
+                if (!string.IsNullOrEmpty(rec.TsFilePath))
+                {
+                    activePaths.Add(rec.TsFilePath);
+                }
+
+                if (!string.IsNullOrEmpty(rec.StrmFilePath))
+                {
+                    activePaths.Add(rec.StrmFilePath);
+                }
+
+                if (!string.IsNullOrEmpty(rec.FilePath))
+                {
+                    activePaths.Add(rec.FilePath);
+                }
+            }
+
+            // Remove orphaned .strm files left from previous plugin versions
             foreach (string strmFile in Directory.GetFiles(recPath, "*.strm"))
             {
+                if (activePaths.Contains(strmFile))
+                {
+                    continue;
+                }
+
                 _logger.LogInformation("Cleaning up orphaned .strm file: {Path}", strmFile);
                 File.Delete(strmFile);
             }
 
-            // Remove orphaned .ts files from previous plugin versions that stored them in the root
+            // Remove orphaned hidden .ts files (dot-prefix) from previous plugin versions
+            foreach (string tsFile in Directory.GetFiles(recPath, ".*.ts"))
+            {
+                if (activePaths.Contains(tsFile))
+                {
+                    continue;
+                }
+
+                _logger.LogInformation("Cleaning up orphaned hidden .ts file: {Path}", tsFile);
+                File.Delete(tsFile);
+            }
+
+            // Remove orphaned non-hidden .ts files (skip active recordings)
             foreach (string tsFile in Directory.GetFiles(recPath, "*.ts"))
             {
+                string name = Path.GetFileName(tsFile);
+                if (name.StartsWith('.') || activePaths.Contains(tsFile))
+                {
+                    continue;
+                }
+
                 _logger.LogInformation("Cleaning up orphaned .ts file: {Path}", tsFile);
                 File.Delete(tsFile);
             }
 
-            // Remove orphaned .rec_* segment directories
+            // Clean up orphaned .rec_* segment directories from previous recordings.
+            // On restart, these are leftover from interrupted recordings whose normal
+            // merge was killed. Just delete them — the recording was interrupted anyway.
+            var activeTimerIds = new HashSet<string>(_activeRecordings.Keys, StringComparer.OrdinalIgnoreCase);
+
             foreach (string dir in Directory.GetDirectories(recPath, ".rec_*"))
             {
+                string dirName = Path.GetFileName(dir);
+                string timerId = dirName.StartsWith(".rec_", StringComparison.Ordinal)
+                    ? dirName.Substring(5)
+                    : dirName;
+
+                // Skip directories belonging to active recordings
+                if (activeTimerIds.Contains(timerId))
+                {
+                    continue;
+                }
+
                 _logger.LogInformation("Cleaning up orphaned segment directory: {Path}", dir);
-                Directory.Delete(dir, true);
+                try
+                {
+                    Directory.Delete(dir, true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to clean up segment directory: {Dir}", dir);
+                }
+            }
+
+            // Clean up any recovered_*.mkv files from previous merges
+            foreach (string mkvFile in Directory.GetFiles(recPath, "recovered_*" + FinalExtension))
+            {
+                _logger.LogInformation("Cleaning up recovered file: {Path}", mkvFile);
+                try
+                {
+                    File.Delete(mkvFile);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to clean up recovered file: {Path}", mkvFile);
+                }
             }
         }
         catch (Exception ex)

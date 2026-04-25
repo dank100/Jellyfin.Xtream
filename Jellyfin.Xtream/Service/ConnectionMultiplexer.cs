@@ -77,8 +77,9 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     /// is captured.
     /// </summary>
     /// <param name="streamId">The Xtream stream ID.</param>
+    /// <param name="isLive">True for live TV viewers that need real-time delivery; false for recordings.</param>
     /// <returns>The channel buffer.</returns>
-    public ChannelBuffer Subscribe(int streamId)
+    public ChannelBuffer Subscribe(int streamId, bool isLive = false)
     {
         var buffer = _channels.GetOrAdd(streamId, id =>
         {
@@ -87,12 +88,21 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         });
 
         buffer.SubscriberCount++;
+        if (isLive)
+        {
+            buffer.LiveViewerCount++;
+        }
+
         if (buffer.State == ChannelBufferState.Idle)
         {
             buffer.State = ChannelBufferState.Buffering;
         }
 
-        _logger.LogInformation("Subscribed to stream {StreamId}, subscribers: {Count}", streamId, buffer.SubscriberCount);
+        _logger.LogInformation(
+            "Subscribed to stream {StreamId}, subscribers: {Count}, live: {Live}",
+            streamId,
+            buffer.SubscriberCount,
+            buffer.LiveViewerCount);
         return buffer;
     }
 
@@ -101,7 +111,8 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     /// channel moves to Idle and its segments are cleaned up.
     /// </summary>
     /// <param name="streamId">The Xtream stream ID.</param>
-    public void Unsubscribe(int streamId)
+    /// <param name="isLive">Must match the value used in Subscribe.</param>
+    public void Unsubscribe(int streamId, bool isLive = false)
     {
         if (!_channels.TryGetValue(streamId, out var buffer))
         {
@@ -109,7 +120,16 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         }
 
         buffer.SubscriberCount--;
-        _logger.LogInformation("Unsubscribed from stream {StreamId}, subscribers: {Count}", streamId, buffer.SubscriberCount);
+        if (isLive)
+        {
+            buffer.LiveViewerCount = Math.Max(0, buffer.LiveViewerCount - 1);
+        }
+
+        _logger.LogInformation(
+            "Unsubscribed from stream {StreamId}, subscribers: {Count}, live: {Live}",
+            streamId,
+            buffer.SubscriberCount,
+            buffer.LiveViewerCount);
 
         if (buffer.SubscriberCount <= 0)
         {
@@ -242,8 +262,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
 
                 try
                 {
-                    await CaptureSliceAsync(buffer, sliceSeconds, ct).ConfigureAwait(false);
-                    buffer.PruneSegments(retentionSeconds);
+                    await CaptureStreamAsync(buffer, sliceSeconds, retentionSeconds, ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -251,24 +270,26 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Error capturing slice for stream {StreamId}", buffer.StreamId);
-                    await Task.Delay(500, ct).ConfigureAwait(false);
+                    _logger.LogWarning(ex, "Error in continuous capture for stream {StreamId}", buffer.StreamId);
+                    await Task.Delay(2000, ct).ConfigureAwait(false);
                 }
             }
         }
     }
 
     /// <summary>
-    /// Captures <paramref name="sliceSeconds"/> of TS data from a channel using
-    /// ffmpeg and stores it as an HLS segment.
+    /// Runs a continuous ffmpeg capture for a channel using the segment muxer.
+    /// One persistent connection produces segment files automatically.
+    /// Runs until cancelled, the stream ends, or we need to yield to other channels.
     /// </summary>
-    private async Task CaptureSliceAsync(ChannelBuffer buffer, int sliceSeconds, CancellationToken ct)
+    private async Task CaptureStreamAsync(ChannelBuffer buffer, int sliceSeconds, int retentionSeconds, CancellationToken ct)
     {
         PluginConfiguration config = Plugin.Instance.Configuration;
         string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{buffer.StreamId}";
 
-        string segFilename = buffer.AllocateSegmentFilename();
-        string segPath = Path.Combine(buffer.SegmentDir, segFilename);
+        string captureId = Guid.NewGuid().ToString("N")[..8];
+        string segPattern = Path.Combine(buffer.SegmentDir, $"c{captureId}_%05d.ts");
+        string segListPath = Path.Combine(buffer.SegmentDir, $"c{captureId}_list.txt");
 
         var ffmpegPath = GetFfmpegPath();
         string userAgentArg = string.IsNullOrEmpty(config.UserAgent)
@@ -278,21 +299,25 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = $"{userAgentArg}-i \"{url}\" -t {sliceSeconds}"
+            Arguments = $"{userAgentArg}-i \"{url}\""
                 + " -map 0 -dn -sn -c:v copy -c:a aac -b:a 192k"
-                + $" -f mpegts -y \"{segPath}\"",
+                + $" -f segment -segment_time {sliceSeconds} -segment_format mpegts"
+                + $" -segment_list \"{segListPath}\" -segment_list_type flat"
+                + $" -y \"{segPattern}\"",
             UseShellExecute = false,
             RedirectStandardError = true,
             RedirectStandardInput = true,
             CreateNoWindow = true,
         };
 
-        _logger.LogDebug("Capturing {Seconds}s from stream {StreamId}: {Args}", sliceSeconds, buffer.StreamId, psi.Arguments);
+        _logger.LogInformation(
+            "Starting continuous capture for stream {StreamId}: {Args}",
+            buffer.StreamId,
+            psi.Arguments);
 
         using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start ffmpeg for multiplexer capture");
+            ?? throw new InvalidOperationException("Failed to start ffmpeg for continuous capture");
 
-        // Register cancellation to kill ffmpeg
         ct.Register(() =>
         {
             try
@@ -308,34 +333,221 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             }
         });
 
-        // Drain stderr to prevent buffer deadlock
-        _ = process.StandardError.ReadToEndAsync(ct);
-
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
-
-        if (!File.Exists(segPath) || new FileInfo(segPath).Length == 0)
-        {
-            _logger.LogWarning("Capture produced no data for stream {StreamId}", buffer.StreamId);
-            if (File.Exists(segPath))
+        // Drain stderr to prevent buffer deadlock.
+        var stderrTask = Task.Run(
+            async () =>
             {
-                File.Delete(segPath);
+                try
+                {
+                    string? line;
+                    while ((line = await process.StandardError.ReadLineAsync(ct).ConfigureAwait(false)) != null)
+                    {
+                        _logger.LogDebug("Capture stderr [{StreamId}]: {Line}", buffer.StreamId, line);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            },
+            ct);
+
+        // Monitor the segment list file for completed segments.
+        int completedCount = 0;
+        bool firstSegment = true;
+        try
+        {
+            while (!ct.IsCancellationRequested && !process.HasExited)
+            {
+                // Read the segment list file written by ffmpeg.
+                int newCount = 0;
+                if (File.Exists(segListPath))
+                {
+                    try
+                    {
+                        var lines = await File.ReadAllLinesAsync(segListPath, ct).ConfigureAwait(false);
+                        newCount = lines.Length;
+                    }
+                    catch (IOException)
+                    {
+                        // File may be locked by ffmpeg writing it
+                    }
+                }
+
+                // Process newly completed segments.
+                // Only process segment N when N+1 exists in the list,
+                // confirming N is fully written (the list entry for N+1
+                // means ffmpeg has moved on to writing the next segment).
+                int safeCount = Math.Max(0, newCount - 1);
+                for (int i = completedCount; i < safeCount; i++)
+                {
+                    string segFilename = $"c{captureId}_{i:D5}.ts";
+                    string segPath = Path.Combine(buffer.SegmentDir, segFilename);
+
+                    if (!File.Exists(segPath) || new FileInfo(segPath).Length == 0)
+                    {
+                        continue;
+                    }
+
+                    var segment = new SegmentInfo
+                    {
+                        Filename = segFilename,
+                        DurationSeconds = sliceSeconds,
+                        CapturedUtc = DateTime.UtcNow,
+                    };
+
+                    bool isDiscontinuity = firstSegment && buffer.GetSegments().Count > 0;
+                    buffer.AddSegment(segment, isDiscontinuity);
+                    firstSegment = false;
+
+                    _logger.LogInformation(
+                        "Continuous capture: segment {Filename} ready for stream {StreamId}",
+                        segFilename,
+                        buffer.StreamId);
+                }
+
+                completedCount = Math.Max(completedCount, safeCount);
+
+                // Periodic pruning
+                buffer.PruneSegments(retentionSeconds);
+
+                // Yield to other channels if more active channels than connections.
+                // Priority: live TV viewers get more capture time than recording-only channels.
+                int activeCount = _channels.Count(kvp => kvp.Value.SubscriberCount > 0);
+                if (activeCount > _maxConnections && completedCount > 0)
+                {
+                    bool hasStarvingChannel = _channels.Any(kvp =>
+                        kvp.Value.SubscriberCount > 0
+                        && kvp.Value.StreamId != buffer.StreamId
+                        && kvp.Value.GetSegments().Count == 0);
+
+                    bool hasLiveWaiting = _channels.Any(kvp =>
+                        kvp.Value.LiveViewerCount > 0
+                        && kvp.Value.StreamId != buffer.StreamId);
+
+                    // Live channels get 4x more segments than recording-only channels.
+                    // If another channel has live viewers waiting, yield sooner.
+                    int minSegments;
+                    if (hasStarvingChannel)
+                    {
+                        minSegments = 1;
+                    }
+                    else if (buffer.LiveViewerCount > 0)
+                    {
+                        // This channel has live viewers — capture generously.
+                        // Yield sooner if another live channel is waiting.
+                        minSegments = hasLiveWaiting ? 10 : 15;
+                    }
+                    else
+                    {
+                        // Recording-only channel — yield quickly to prioritize live.
+                        minSegments = hasLiveWaiting ? 3 : 6;
+                    }
+
+                    if (completedCount >= minSegments)
+                    {
+                        _logger.LogInformation(
+                            "Yielding capture for stream {StreamId} after {Count} segments (live={IsLive}, liveWaiting={LiveWaiting})",
+                            buffer.StreamId,
+                            completedCount,
+                            buffer.LiveViewerCount > 0,
+                            hasLiveWaiting);
+                        break;
+                    }
+                }
+
+                await Task.Delay(500, ct).ConfigureAwait(false);
             }
 
-            return;
+            // When ffmpeg exits, finalize any remaining segments from the list.
+            if (File.Exists(segListPath))
+            {
+                try
+                {
+                    var finalLines = await File.ReadAllLinesAsync(segListPath, CancellationToken.None).ConfigureAwait(false);
+                    for (int i = completedCount; i < finalLines.Length; i++)
+                    {
+                        string segFilename = $"c{captureId}_{i:D5}.ts";
+                        string segPath = Path.Combine(buffer.SegmentDir, segFilename);
+
+                        if (File.Exists(segPath) && new FileInfo(segPath).Length > 0)
+                        {
+                            var segment = new SegmentInfo
+                            {
+                                Filename = segFilename,
+                                DurationSeconds = sliceSeconds,
+                                CapturedUtc = DateTime.UtcNow,
+                            };
+
+                            bool isDiscontinuity = firstSegment && buffer.GetSegments().Count > 0;
+                            buffer.AddSegment(segment, isDiscontinuity);
+                            firstSegment = false;
+                            completedCount = i + 1;
+                        }
+                    }
+                }
+                catch (IOException)
+                {
+                    // Best effort
+                }
+            }
         }
-
-        var segment = new SegmentInfo
+        catch (OperationCanceledException)
         {
-            Filename = segFilename,
-            DurationSeconds = sliceSeconds,
-            CapturedUtc = DateTime.UtcNow,
-        };
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                try
+                {
+                    // Use sync Write here since we're in finally block cleanup
+#pragma warning disable CA1849
+                    process.StandardInput.Write('q');
+#pragma warning restore CA1849
+                }
+                catch
+                {
+                    // Ignore
+                }
 
-        // First segment after a reconnect is a discontinuity
-        bool isDiscontinuity = buffer.GetSegments().Count > 0;
-        buffer.AddSegment(segment, isDiscontinuity);
+                using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                try
+                {
+                    await process.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    process.Kill();
+                }
+            }
 
-        _logger.LogDebug("Captured segment {Filename} for stream {StreamId}", segFilename, buffer.StreamId);
+            try
+            {
+                await stderrTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Ignore
+            }
+
+            // Clean up the segment list file
+            if (File.Exists(segListPath))
+            {
+                try
+                {
+                    File.Delete(segListPath);
+                }
+                catch (IOException)
+                {
+                    // Best effort
+                }
+            }
+
+            _logger.LogInformation(
+                "Continuous capture for stream {StreamId} finished: {Count} segments produced",
+                buffer.StreamId,
+                completedCount);
+        }
     }
 
     private static string GetFfmpegPath()

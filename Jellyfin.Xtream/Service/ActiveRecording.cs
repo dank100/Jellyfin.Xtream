@@ -56,6 +56,17 @@ public sealed class ActiveRecording : IDisposable
     public string? TsFilePath { get; set; }
 
     /// <summary>
+    /// Gets or sets the .strm file path that points to the tailing TS endpoint.
+    /// </summary>
+    public string? StrmFilePath { get; set; }
+
+    /// <summary>
+    /// Gets or sets the multiplexer stream ID for unsubscribing on stop.
+    /// Null if the recording doesn't use the multiplexer.
+    /// </summary>
+    public int? MuxStreamId { get; set; }
+
+    /// <summary>
     /// Gets the cancellation token source for this recording.
     /// </summary>
     public CancellationTokenSource CancellationTokenSource => _cts;

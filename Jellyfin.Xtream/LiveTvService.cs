@@ -53,8 +53,8 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     private readonly Dictionary<string, TimerInfo> _timers = timerStore.LoadTimers();
     private readonly Dictionary<string, SeriesTimerInfo> _seriesTimers = timerStore.LoadSeriesTimers();
 
-    // Maps recording channel GUIDs to timer IDs for reverse lookup
-    private readonly Dictionary<string, string> _recordingChannelMap = new();
+    // Maps recording channel GUIDs to timer IDs for reverse lookup (unused — recordings are library-only)
+    // private readonly Dictionary<string, string> _recordingChannelMap = new();
 
     // Lazy to break circular dependency (RecordingEngine → LiveTvService → RecordingEngine)
     private RecordingEngine? _recordingEngine;
@@ -115,25 +115,6 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 ImageUrl = channel.StreamIcon,
                 Name = parsed.Title,
                 Tags = parsed.Tags,
-            });
-        }
-
-        // Append virtual channels for active recordings
-        _recordingChannelMap.Clear();
-        int recIndex = 0;
-        foreach (var rec in RecordingEngine.GetReadyRecordingsSnapshot())
-        {
-            recIndex++;
-            // Use a deterministic hash of the timer ID for the GUID encoding
-            int timerHash = rec.Timer.Id.GetHashCode(StringComparison.Ordinal);
-            string channelId = StreamService.ToGuid(StreamService.RecordingPrefix, timerHash, 0, 0).ToString();
-            _recordingChannelMap[channelId] = rec.Timer.Id;
-
-            items.Add(new ChannelInfo()
-            {
-                Id = channelId,
-                Number = $"0.{recIndex}",
-                Name = $"\u25cf REC: {rec.Timer.Name}",
             });
         }
 
@@ -263,12 +244,6 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <inheritdoc />
     public async Task<IEnumerable<ProgramInfo>> GetProgramsAsync(string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
     {
-        // Handle virtual recording channels
-        if (_recordingChannelMap.TryGetValue(channelId, out string? timerId))
-        {
-            return GetRecordingPrograms(channelId, timerId, startDateUtc, endDateUtc);
-        }
-
         Guid guid = Guid.Parse(channelId);
         StreamService.FromGuid(guid, out int prefix, out int streamId, out int _, out int _);
         if (prefix != StreamService.LiveTvPrefix)
@@ -351,34 +326,6 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     /// <inheritdoc />
     public async Task<ILiveStream> GetChannelStreamWithDirectStreamProvider(string channelId, string streamId, List<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
     {
-        // Check if this is a virtual recording channel
-        if (_recordingChannelMap.TryGetValue(channelId, out string? timerId))
-        {
-            // Reuse an existing stream if another consumer is already watching
-            ILiveStream? existing = currentLiveStreams.Find(s => s.TunerHostId == RecordingRestream.TunerHost && s.MediaSource.Id == $"recording_{timerId}");
-            if (existing != null)
-            {
-                existing.ConsumerCount++;
-                return existing;
-            }
-
-            // Look up the timer to provide duration info
-            TimerInfo? timer;
-            lock (_timers)
-            {
-                _timers.TryGetValue(timerId, out timer);
-            }
-
-            // Get the TS file path from the active recording for direct file access
-            var activeRec = RecordingEngine.GetActiveRecording(timerId);
-            string? tsFilePath = activeRec?.TsFilePath;
-
-            var recStream = new RecordingRestream(appHost, logger, timerId, timer, tsFilePath, activeRec?.StartedUtc);
-            await recStream.Open(cancellationToken).ConfigureAwait(false);
-            recStream.ConsumerCount++;
-            return recStream;
-        }
-
         Guid guid = Guid.Parse(channelId);
         StreamService.FromGuid(guid, out int prefix, out int channel, out int _, out int _);
         if (prefix != StreamService.LiveTvPrefix)
@@ -451,52 +398,5 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         return myTz.GetUtcOffset(now) - epgTz.GetUtcOffset(now);
-    }
-
-    /// <summary>
-    /// Returns a single EPG entry for a virtual recording channel, spanning the timer's scheduled time.
-    /// </summary>
-    private IEnumerable<ProgramInfo> GetRecordingPrograms(string channelId, string timerId, DateTime startDateUtc, DateTime endDateUtc)
-    {
-        TimerInfo? timer;
-        lock (_timers)
-        {
-            _timers.TryGetValue(timerId, out timer);
-        }
-
-        if (timer == null)
-        {
-            return [];
-        }
-
-        // Use the actual recording start time for correct EPG display.
-        // The transcoder's initial live HLS command has no -ss parameter,
-        // so it reads from byte 0 of the TS file regardless of StartDate.
-        // Backward seeking works via the guide overlay which creates new
-        // playback sessions — the transcoder restarts with -ss at the
-        // requested position in the seekable TS file.
-        var activeRec = RecordingEngine.GetActiveRecording(timerId);
-        var start = activeRec?.StartedUtc ?? timer.StartDate.AddSeconds(-timer.PrePaddingSeconds);
-        var end = timer.EndDate.AddSeconds(timer.PostPaddingSeconds);
-
-        if (end < startDateUtc || start >= endDateUtc)
-        {
-            return [];
-        }
-
-        int timerHash = timerId.GetHashCode(StringComparison.Ordinal);
-        return
-        [
-            new ProgramInfo()
-            {
-                Id = StreamService.ToGuid(StreamService.RecordingPrefix, timerHash, 1, 0).ToString(),
-                ChannelId = channelId,
-                StartDate = start,
-                EndDate = end,
-                Name = timer.Name,
-                Overview = $"Recording: {timer.Name}",
-                IsLive = false,
-            }
-        ];
     }
 }

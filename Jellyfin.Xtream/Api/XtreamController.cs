@@ -40,6 +40,12 @@ namespace Jellyfin.Xtream.Api;
 [Produces(MediaTypeNames.Application.Json)]
 public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParser, RecordingEngine recordingEngine, ConnectionMultiplexer connectionMultiplexer) : ControllerBase
 {
+    /// <summary>
+    /// MPEG-TS null packet (PID 0x1FFF). Decoders/demuxers ignore these.
+    /// Sent during data gaps to keep the HTTP stream alive so ffmpeg doesn't timeout.
+    /// </summary>
+    private static readonly byte[] TsNullPacket = CreateTsNullPacket();
+
     private static CategoryResponse CreateCategoryResponse(Category category) =>
         new()
         {
@@ -73,6 +79,16 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             Name = stream.Name,
             Number = stream.Num,
         };
+
+    private static byte[] CreateTsNullPacket()
+    {
+        var pkt = new byte[188];
+        pkt[0] = 0x47; // sync byte
+        pkt[1] = 0x1F; // PID high bits (0x1FFF = null packet)
+        pkt[2] = 0xFF; // PID low bits
+        pkt[3] = 0x10; // adaptation field control: payload only
+        return pkt;
+    }
 
     /// <summary>
     /// Test the configured provider.
@@ -333,6 +349,91 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     }
 
     /// <summary>
+    /// Serves the growing MPEG-TS file for an active recording as a continuous stream.
+    /// Tails the file and sends TS null packets during gaps to keep ffmpeg alive.
+    /// Anonymous access allowed — the timer ID acts as an unguessable access token.
+    /// </summary>
+    /// <param name="timerId">The timer ID of the recording.</param>
+    /// <returns>A continuous MPEG-TS stream.</returns>
+    [AllowAnonymous]
+    [HttpGet("Recordings/{timerId}/stream.ts")]
+    public async Task GetRecordingStream(string timerId)
+    {
+#pragma warning disable CA3003
+        string? tsPath = recordingEngine.GetTsFilePath(timerId);
+        if (tsPath == null || !System.IO.File.Exists(tsPath))
+        {
+            Response.StatusCode = 404;
+            return;
+        }
+#pragma warning restore CA3003
+
+        Response.ContentType = "video/MP2T";
+        Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
+        Response.Headers.Append("Access-Control-Allow-Origin", "*");
+
+        var cancellation = HttpContext.RequestAborted;
+
+        try
+        {
+            using var fs = new FileStream(tsPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920);
+            var buffer = new byte[81920];
+            int emptyReads = 0;
+
+            while (!cancellation.IsCancellationRequested)
+            {
+                int bytesRead = await fs.ReadAsync(buffer, cancellation).ConfigureAwait(false);
+                if (bytesRead > 0)
+                {
+                    emptyReads = 0;
+                    await Response.Body.WriteAsync(buffer.AsMemory(0, bytesRead), cancellation).ConfigureAwait(false);
+                    await Response.Body.FlushAsync(cancellation).ConfigureAwait(false);
+                }
+                else if (recordingEngine.IsRecordingActive(timerId))
+                {
+                    emptyReads++;
+                    // After 600 empty reads (5 min) with no real data, give up
+                    if (emptyReads > 600)
+                    {
+                        break;
+                    }
+
+                    // Send TS null packets every 500ms to keep the HTTP connection
+                    // alive. ffmpeg/decoders ignore PID 0x1FFF packets.
+                    if (emptyReads % 2 == 0)
+                    {
+                        await Response.Body.WriteAsync(TsNullPacket, cancellation).ConfigureAwait(false);
+                        await Response.Body.FlushAsync(cancellation).ConfigureAwait(false);
+                    }
+
+                    await Task.Delay(250, cancellation).ConfigureAwait(false);
+                }
+                else
+                {
+                    // Recording finished — drain remaining bytes and close
+                    while (!cancellation.IsCancellationRequested)
+                    {
+                        bytesRead = await fs.ReadAsync(buffer, cancellation).ConfigureAwait(false);
+                        if (bytesRead == 0)
+                        {
+                            break;
+                        }
+
+                        await Response.Body.WriteAsync(buffer.AsMemory(0, bytesRead), cancellation).ConfigureAwait(false);
+                        await Response.Body.FlushAsync(cancellation).ConfigureAwait(false);
+                    }
+
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected
+        }
+    }
+
+    /// <summary>
     /// Serves the HLS playlist for a multiplexed channel.
     /// Anonymous access allowed — stream ID acts as an access token.
     /// </summary>
@@ -357,9 +458,9 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
         var lines = content.Split('\n');
         for (int i = 0; i < lines.Length; i++)
         {
-            if (!lines[i].StartsWith('#') && lines[i].StartsWith("seg_", StringComparison.Ordinal))
+            if (!lines[i].StartsWith('#') && lines[i].EndsWith(".ts", StringComparison.Ordinal))
             {
-                lines[i] = $"segments/{lines[i]}";
+                lines[i] = $"segments/{lines[i].Trim()}";
             }
         }
 
@@ -407,5 +508,67 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
         Response.Headers.Append("Access-Control-Allow-Origin", "*");
         return PhysicalFile(segmentPath, "video/MP2T");
 #pragma warning restore CA3003
+    }
+
+    /// <summary>
+    /// Lists active recordings with their timer IDs and file paths.
+    /// Used for integration testing.
+    /// </summary>
+    /// <returns>Active recordings info.</returns>
+    [AllowAnonymous]
+    [HttpGet("Test/ActiveRecordings")]
+    public ActionResult<object> TestGetActiveRecordings()
+    {
+        var recordings = recordingEngine.ActiveRecordings.Select(kvp => new
+        {
+            TimerId = kvp.Key,
+            kvp.Value.TsFilePath,
+            kvp.Value.MuxStreamId,
+            StartedUtc = kvp.Value.StartedUtc.ToString("o"),
+        });
+        return Ok(recordings);
+    }
+
+    /// <summary>
+    /// Starts a test recording on the given stream ID.
+    /// Creates a synthetic timer and starts recording immediately.
+    /// </summary>
+    /// <param name="streamId">The Xtream stream ID (e.g. 101).</param>
+    /// <param name="durationMinutes">Recording duration in minutes (default 5).</param>
+    /// <returns>The timer ID of the started recording.</returns>
+    [AllowAnonymous]
+    [HttpPost("Test/StartRecording")]
+    public ActionResult<object> TestStartRecording(int streamId, int durationMinutes = 5)
+    {
+        string timerId = Guid.NewGuid().ToString("N");
+        string channelId = StreamService.ToGuid(0x3e4c775d, streamId, 0, 0).ToString();
+        var now = DateTime.UtcNow;
+
+        var timer = new MediaBrowser.Controller.LiveTv.TimerInfo
+        {
+            Id = timerId,
+            ChannelId = channelId,
+            Name = $"IntegrationTest_stream{streamId}",
+            StartDate = now,
+            EndDate = now.AddMinutes(durationMinutes),
+            Status = MediaBrowser.Model.LiveTv.RecordingStatus.New,
+            ProgramId = string.Empty,
+        };
+
+        recordingEngine.StartRecording(timer);
+        return Ok(new { TimerId = timerId, StreamId = streamId, DurationMinutes = durationMinutes });
+    }
+
+    /// <summary>
+    /// Cancels a test recording.
+    /// </summary>
+    /// <param name="timerId">The timer ID to cancel.</param>
+    /// <returns>Status.</returns>
+    [AllowAnonymous]
+    [HttpPost("Test/StopRecording/{timerId}")]
+    public ActionResult<object> TestStopRecording(string timerId)
+    {
+        recordingEngine.CancelRecording(timerId);
+        return Ok(new { Cancelled = timerId });
     }
 }
