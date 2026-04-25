@@ -30,10 +30,23 @@ stop_all_recordings() {
     done
 }
 
+# Remove all IntegrationTest_* artifacts from the recordings directory inside the container.
+clean_test_files() {
+    log "Removing IntegrationTest files from container..."
+    docker exec jellyfin-dev sh -c '
+        dir="/config/data/livetv/recordings"
+        rm -f "$dir"/IntegrationTest_* "$dir"/.IntegrationTest_*
+        for d in "$dir"/.rec_*; do
+            [ -d "$d" ] && rm -rf "$d"
+        done
+    ' 2>/dev/null || true
+}
+
 cleanup() {
     log "Final cleanup: stopping all recordings..."
     stop_all_recordings
-    sleep 3
+    sleep 5
+    clean_test_files
     # Verify nothing remains
     local remaining
     remaining=$(curl -s "$API/Test/ActiveRecordings" 2>/dev/null || echo "[]")

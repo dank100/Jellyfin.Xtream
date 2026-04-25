@@ -431,31 +431,6 @@ public class RecordingEngine : IHostedService, IDisposable
                     }
                 }
 
-                if (File.Exists(tsPath))
-                {
-                    try
-                    {
-                        File.Delete(tsPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to clean up TS file: {Path}", tsPath);
-                    }
-                }
-
-                // Remove the .strm file — the .mkv is the final library item
-                if (File.Exists(strmPath))
-                {
-                    try
-                    {
-                        File.Delete(strmPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to clean up .strm file: {Path}", strmPath);
-                    }
-                }
-
                 timer.Status = RecordingStatus.Completed;
                 _liveTvService.UpdateTimerStatus(timer);
                 _completedRecordings[timer.Id] = new CompletedRecording
@@ -474,9 +449,48 @@ public class RecordingEngine : IHostedService, IDisposable
             {
                 _servableHlsDirs.TryRemove(timer.Id, out _);
                 _servableTsPaths.TryRemove(timer.Id, out _);
+
+                // Clean up empty segment directory
+                if (Directory.Exists(segmentDir))
+                {
+                    try
+                    {
+                        Directory.Delete(segmentDir, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to clean up segment directory: {Dir}", segmentDir);
+                    }
+                }
+
                 timer.Status = RecordingStatus.Error;
                 _liveTvService.UpdateTimerStatus(timer);
                 _logger.LogWarning("Recording produced no output: {Name}", timer.Name);
+            }
+
+            // Always clean up intermediate files (.ts and .strm) — the .mkv is the final item
+            if (File.Exists(tsPath))
+            {
+                try
+                {
+                    File.Delete(tsPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to clean up TS file: {Path}", tsPath);
+                }
+            }
+
+            if (File.Exists(strmPath))
+            {
+                try
+                {
+                    File.Delete(strmPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to clean up .strm file: {Path}", strmPath);
+                }
             }
 
             recording.Dispose();
