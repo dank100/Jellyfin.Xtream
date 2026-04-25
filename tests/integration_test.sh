@@ -151,8 +151,8 @@ test_stream_keepalive() {
     timer_id=$(start_recording $STREAM_102) || return
 
     log "Started recording on stream $STREAM_102, timer: $timer_id"
-    log "Waiting 15s for data..."
-    sleep 15
+    log "Waiting 25s for data..."
+    sleep 25
 
     # Read for 30s — should get data even during multiplexer gaps
     log "Reading stream for 30s (should survive multiplexer gaps)..."
@@ -577,6 +577,9 @@ echo ""
 
 test_single_recording
 echo ""
+# Ensure clean state before keepalive test
+stop_all_recordings
+sleep 3
 test_stream_keepalive
 echo ""
 test_two_recordings
