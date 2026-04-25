@@ -109,7 +109,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         var buffer = _multiplexer.Subscribe(_streamId, isLive: true);
 
         // Wait for enough segments so there is data to pump.
-        const int minSegments = 5;
+        const int minSegments = 3;
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (buffer.GetSegments().Count < minSegments && DateTime.UtcNow < deadline)
         {

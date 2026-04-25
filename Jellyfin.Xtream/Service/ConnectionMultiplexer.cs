@@ -401,11 +401,11 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = $"-fflags +nobuffer -analyzeduration 3000000 -probesize 3000000 "
+            Arguments = $"-fflags +nobuffer -analyzeduration 1000000 -probesize 1000000 "
                 + $"{userAgentArg}-i \"{url}\""
-                + " -map 0 -dn -sn -c:v copy -c:a aac -b:a 192k"
+                + " -map 0 -dn -sn -c copy"
                 + $" -f segment -segment_time {sliceSeconds} -segment_format mpegts"
-                + $" -segment_list \"{segListPath}\" -segment_list_type flat"
+                + $" -segment_list \"{segListPath}\" -segment_list_type csv"
                 + $" -y \"{segPattern}\"",
             UseShellExecute = false,
             RedirectStandardError = true,
@@ -461,14 +461,32 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         {
             while (!ct.IsCancellationRequested && !process.HasExited)
             {
-                // Read the segment list file written by ffmpeg.
+                // Read the CSV segment list written by ffmpeg.
+                // CSV format: filename,start_time,end_time
                 int newCount = 0;
+                double[] segDurations = Array.Empty<double>();
                 if (File.Exists(segListPath))
                 {
                     try
                     {
                         var lines = await File.ReadAllLinesAsync(segListPath, ct).ConfigureAwait(false);
-                        newCount = lines.Length;
+                        var validLines = lines.Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+                        newCount = validLines.Length;
+                        segDurations = new double[newCount];
+                        for (int li = 0; li < newCount; li++)
+                        {
+                            var parts = validLines[li].Split(',');
+                            if (parts.Length >= 3
+                                && double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double start)
+                                && double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double end))
+                            {
+                                segDurations[li] = Math.Max(0.5, end - start);
+                            }
+                            else
+                            {
+                                segDurations[li] = sliceSeconds;
+                            }
+                        }
                     }
                     catch (IOException)
                     {
@@ -494,7 +512,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     var segment = new SegmentInfo
                     {
                         Filename = segFilename,
-                        DurationSeconds = sliceSeconds,
+                        DurationSeconds = i < segDurations.Length ? segDurations[i] : sliceSeconds,
                         CapturedUtc = DateTime.UtcNow,
                     };
 
@@ -528,21 +546,16 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                         && kvp.Value.StreamId != buffer.StreamId);
 
                     // Yield quickly to keep round-robin responsive.
-                    // With ~8s ffmpeg startup overhead per capture, fewer segments
-                    // per yield means faster cycling between channels.
+                    // With 3+ channels sharing 1 connection, fast cycling is critical.
+                    // Each yield produces ~2 segments (1 during capture + 1 in finalization).
                     int minSegments;
                     if (hasStarvingChannel)
                     {
-                        minSegments = 2;
-                    }
-                    else if (buffer.LiveViewerCount > 0)
-                    {
-                        minSegments = 3;
+                        minSegments = 1;
                     }
                     else
                     {
-                        // Recording-only: yield quickly so live channels aren't starved.
-                        minSegments = hasLiveWaiting ? 2 : 3;
+                        minSegments = 2;
                     }
 
                     if (completedCount >= minSegments)
@@ -584,7 +597,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     // Ignore
                 }
 
-                using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
                 try
                 {
                     await process.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
@@ -603,8 +616,27 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             {
                 try
                 {
-                    var finalLines = await File.ReadAllLinesAsync(segListPath, CancellationToken.None).ConfigureAwait(false);
+                    var finalLines = (await File.ReadAllLinesAsync(segListPath, CancellationToken.None).ConfigureAwait(false))
+                        .Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
                     int finalCount = gracefulExit ? finalLines.Length : Math.Max(0, finalLines.Length - 1);
+
+                    // Parse CSV durations from final segment list
+                    var finalDurations = new double[finalLines.Length];
+                    for (int li = 0; li < finalLines.Length; li++)
+                    {
+                        var parts = finalLines[li].Split(',');
+                        if (parts.Length >= 3
+                            && double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double start)
+                            && double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double end))
+                        {
+                            finalDurations[li] = Math.Max(0.5, end - start);
+                        }
+                        else
+                        {
+                            finalDurations[li] = sliceSeconds;
+                        }
+                    }
+
                     for (int i = completedCount; i < finalCount; i++)
                     {
                         string segFilename = $"c{captureId}_{i:D5}.ts";
@@ -615,7 +647,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                             var segment = new SegmentInfo
                             {
                                 Filename = segFilename,
-                                DurationSeconds = sliceSeconds,
+                                DurationSeconds = i < finalDurations.Length ? finalDurations[i] : sliceSeconds,
                                 CapturedUtc = DateTime.UtcNow,
                             };
 

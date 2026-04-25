@@ -7,6 +7,7 @@ BASE_URL="${JELLYFIN_URL:-http://localhost:8096}"
 API="$BASE_URL/Xtream"
 STREAM_101=101
 STREAM_102=102
+STREAM_103=103
 PASS=0
 FAIL=0
 
@@ -805,6 +806,208 @@ test_staggered_start() {
     pass "Test 9 complete: staggered start transition works"
 }
 
+# ===== TEST 10: Three channels on one connection — all get data fairly =====
+# The ultimate multiplexer stress test: 3 simultaneous recordings sharing
+# a single provider connection. Verifies:
+# - All 3 channels receive segments within a reasonable time
+# - No channel is starved (fairness)
+# - All recordings are transcodable (no corruption from fast cycling)
+test_three_channel_fairness() {
+    log "=== Test 10: Three channels on one connection ==="
+
+    local timer1 timer2 timer3
+    timer1=$(start_recording $STREAM_101) || return
+    timer2=$(start_recording $STREAM_102) || return
+    timer3=$(start_recording $STREAM_103) || return
+
+    log "Started 3 recordings: stream $STREAM_101 ($timer1), $STREAM_102 ($timer2), $STREAM_103 ($timer3)"
+
+    # With 3 channels and optimized ffmpeg (~2s startup + 1-2 segments + 1s shutdown ≈ 5-7s per channel),
+    # a full round-robin cycle takes ~15-21s. Allow 30s for all to get data.
+    log "Checking all 3 streams get segments within 30s..."
+    sleep 30
+
+    local p1 p2 p3 seg1 seg2 seg3
+    p1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+    p2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null)
+    p3=$(curl -s "$API/Recordings/$timer3/stream.m3u8" 2>/dev/null)
+    seg1=$(echo "$p1" | grep -c "#EXTINF:" || true)
+    seg2=$(echo "$p2" | grep -c "#EXTINF:" || true)
+    seg3=$(echo "$p3" | grep -c "#EXTINF:" || true)
+
+    log "After 30s: stream $STREAM_101=$seg1 segs, $STREAM_102=$seg2 segs, $STREAM_103=$seg3 segs"
+
+    local all_have_data=true
+    for sid_seg in "101:$seg1" "102:$seg2" "103:$seg3"; do
+        local sid=${sid_seg%%:*}
+        local segs=${sid_seg##*:}
+        if [ "${segs:-0}" -ge 1 ]; then
+            pass "Stream $sid has data within 30s ($segs segments)"
+        else
+            fail "Stream $sid has NO data after 30s (starved)"
+            all_have_data=false
+        fi
+    done
+
+    # Wait longer to check fairness and growth
+    log "Waiting 40s more to check fairness across 3 channels..."
+    sleep 40
+
+    p1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+    p2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null)
+    p3=$(curl -s "$API/Recordings/$timer3/stream.m3u8" 2>/dev/null)
+    seg1=$(echo "$p1" | grep -c "#EXTINF:" || true)
+    seg2=$(echo "$p2" | grep -c "#EXTINF:" || true)
+    seg3=$(echo "$p3" | grep -c "#EXTINF:" || true)
+
+    log "After 70s total: $STREAM_101=$seg1, $STREAM_102=$seg2, $STREAM_103=$seg3 segments"
+
+    # Each channel should have at least 4 segments in 70s
+    if [ "${seg1:-0}" -ge 4 ] && [ "${seg2:-0}" -ge 4 ] && [ "${seg3:-0}" -ge 4 ]; then
+        pass "All 3 streams have >= 4 segments ($seg1, $seg2, $seg3)"
+    else
+        fail "Too few segments in 70s: $seg1, $seg2, $seg3 (need >=4 each)"
+    fi
+
+    # Fairness: no stream should have more than 3x another
+    local max_seg min_seg
+    max_seg=$seg1
+    [ "${seg2:-0}" -gt "$max_seg" ] && max_seg=$seg2
+    [ "${seg3:-0}" -gt "$max_seg" ] && max_seg=$seg3
+    min_seg=$seg1
+    [ "${seg2:-0}" -lt "$min_seg" ] && min_seg=$seg2
+    [ "${seg3:-0}" -lt "$min_seg" ] && min_seg=$seg3
+
+    local ratio
+    ratio=$((max_seg / (min_seg > 0 ? min_seg : 1)))
+
+    if [ "$ratio" -le 3 ]; then
+        pass "3-channel fairness ratio OK ($ratio:1, max=$max_seg, min=$min_seg)"
+    else
+        fail "Unfair 3-channel ratio $ratio:1 ($STREAM_101=$seg1, $STREAM_102=$seg2, $STREAM_103=$seg3)"
+    fi
+
+    # Verify all 3 streams can be transcoded
+    log "Verifying all 3 recordings transcode..."
+    local all_transcode=true
+    for timer_var in "$timer1" "$timer2" "$timer3"; do
+        local internal_url="http://localhost:8096/Xtream/Recordings/$timer_var/stream.m3u8"
+        local out exit_code
+        out=$(docker exec jellyfin-dev bash -c "timeout 10 /usr/lib/jellyfin-ffmpeg/ffmpeg \
+            -analyzeduration 200M -probesize 1G -i '$internal_url' \
+            -t 3 -map 0:v:0 -map 0:a:0 -codec:v:0 libx264 -preset ultrafast -b:v 1000000 \
+            -codec:a:0 aac -b:a 128000 -f mpegts -y /dev/null 2>&1; echo EXIT:\$?" 2>/dev/null)
+        exit_code=$(echo "$out" | grep "EXIT:" | tail -1 | cut -d: -f2)
+        if [ "$exit_code" != "0" ]; then
+            all_transcode=false
+            log "Transcode failed for $timer_var (exit=$exit_code)"
+            echo "$out" | grep -iE "corrupt|error" | tail -3
+        fi
+    done
+
+    if [ "$all_transcode" = true ]; then
+        pass "All 3 recordings transcode successfully"
+    else
+        fail "One or more 3-channel recordings failed to transcode"
+    fi
+
+    # Cleanup
+    stop_recording "$timer1"
+    stop_recording "$timer2"
+    stop_recording "$timer3"
+    sleep 3
+
+    pass "Test 10 complete: three channels on one connection works"
+}
+
+# ===== TEST 11: Three-channel staggered start — channels join one at a time =====
+# Start channels sequentially with delays to test transitions:
+# 1 channel (parallel) → 2 channels (sequential) → 3 channels (sequential)
+test_three_channel_staggered() {
+    log "=== Test 11: Three-channel staggered start ==="
+
+    # Start first recording (parallel mode)
+    local timer1
+    timer1=$(start_recording $STREAM_101) || return
+    log "Started first recording: stream $STREAM_101 ($timer1)"
+
+    log "Waiting 12s for first recording in parallel mode..."
+    sleep 12
+
+    local seg1_before
+    seg1_before=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null | grep -c "#EXTINF:" || true)
+    log "First recording has $seg1_before segments before second joins"
+
+    if [ "${seg1_before:-0}" -ge 2 ]; then
+        pass "First recording has segments in parallel mode ($seg1_before)"
+    else
+        fail "First recording failed in parallel mode ($seg1_before segments)"
+        stop_recording "$timer1"
+        return
+    fi
+
+    # Add second channel (triggers sequential round-robin)
+    local timer2
+    timer2=$(start_recording $STREAM_102) || return
+    log "Second recording started: stream $STREAM_102 ($timer2) — now 2-channel sequential"
+
+    log "Waiting 20s for 2-channel round-robin to stabilize..."
+    sleep 20
+
+    local seg1_mid seg2_mid
+    seg1_mid=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null | grep -c "#EXTINF:" || true)
+    seg2_mid=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null | grep -c "#EXTINF:" || true)
+    log "After 2nd join: $STREAM_101=$seg1_mid segs, $STREAM_102=$seg2_mid segs"
+
+    if [ "${seg2_mid:-0}" -ge 1 ]; then
+        pass "Second recording got data after joining ($seg2_mid segments)"
+    else
+        fail "Second recording starved after joining ($seg2_mid segments)"
+    fi
+
+    # Add third channel (3-channel sequential)
+    local timer3
+    timer3=$(start_recording $STREAM_103) || return
+    log "Third recording started: stream $STREAM_103 ($timer3) — now 3-channel sequential"
+
+    log "Waiting 50s for 3-channel round-robin..."
+    sleep 50
+
+    local seg1 seg2 seg3
+    seg1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null | grep -c "#EXTINF:" || true)
+    seg2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null | grep -c "#EXTINF:" || true)
+    seg3=$(curl -s "$API/Recordings/$timer3/stream.m3u8" 2>/dev/null | grep -c "#EXTINF:" || true)
+
+    log "Final: $STREAM_101=$seg1, $STREAM_102=$seg2, $STREAM_103=$seg3 segments"
+
+    # All should have grown
+    if [ "${seg1:-0}" -gt "${seg1_mid:-0}" ]; then
+        pass "First recording continued growing ($seg1_mid → $seg1)"
+    else
+        fail "First recording stalled after 3rd joined ($seg1_mid → $seg1)"
+    fi
+
+    if [ "${seg2:-0}" -gt "${seg2_mid:-0}" ]; then
+        pass "Second recording continued growing ($seg2_mid → $seg2)"
+    else
+        fail "Second recording stalled after 3rd joined ($seg2_mid → $seg2)"
+    fi
+
+    if [ "${seg3:-0}" -ge 2 ]; then
+        pass "Third recording got data after joining ($seg3 segments)"
+    else
+        fail "Third recording starved ($seg3 segments)"
+    fi
+
+    # Cleanup
+    stop_recording "$timer1"
+    stop_recording "$timer2"
+    stop_recording "$timer3"
+    sleep 3
+
+    pass "Test 11 complete: three-channel staggered start works"
+}
+
 # ===== MAIN =====
 log "Starting integration tests"
 log "Base URL: $BASE_URL"
@@ -844,6 +1047,13 @@ echo ""
 # Ensure clean state before staggered start test
 drain_all_recordings
 test_staggered_start
+echo ""
+# Ensure clean state before 3-channel tests
+drain_all_recordings
+test_three_channel_fairness
+echo ""
+drain_all_recordings
+test_three_channel_staggered
 echo ""
 
 log "============================="

@@ -18,7 +18,7 @@ export default function (view) {
 
       // Multiplexer settings
       view.querySelector('#EnableMultiplexing').checked = config.EnableMultiplexing || false;
-      view.querySelector('#MultiplexSliceSeconds').value = config.MultiplexSliceSeconds || 3;
+      view.querySelector('#MultiplexSliceSeconds').value = config.MultiplexSliceSeconds || 2;
       view.querySelector('#MultiplexRetentionSeconds').value = config.MultiplexRetentionSeconds || 120;
 
       // Populate EPG sources
@@ -92,7 +92,7 @@ export default function (view) {
 
         // Multiplexer settings
         config.EnableMultiplexing = view.querySelector('#EnableMultiplexing').checked;
-        config.MultiplexSliceSeconds = parseInt(view.querySelector('#MultiplexSliceSeconds').value, 10) || 3;
+        config.MultiplexSliceSeconds = parseInt(view.querySelector('#MultiplexSliceSeconds').value, 10) || 2;
         config.MultiplexRetentionSeconds = parseInt(view.querySelector('#MultiplexRetentionSeconds').value, 10) || 120;
 
         // Collect EPG sources from table

@@ -107,7 +107,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the number of seconds to capture from each channel per round-robin
     /// cycle. Lower values reduce per-channel latency but increase reconnect churn.
     /// </summary>
-    public int MultiplexSliceSeconds { get; set; } = 3;
+    public int MultiplexSliceSeconds { get; set; } = 2;
 
     /// <summary>
     /// Gets or sets the number of seconds of HLS segments to retain per channel.
