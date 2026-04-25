@@ -499,6 +499,21 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 // confirming N is fully written (the list entry for N+1
                 // means ffmpeg has moved on to writing the next segment).
                 int safeCount = Math.Max(0, newCount - 1);
+                bool shouldYield = false;
+
+                // Pre-compute yield parameters once per poll cycle.
+                int activeCount = _channels.Count(kvp => kvp.Value.SubscriberCount > 0);
+                bool needsYield = activeCount > _maxConnections;
+                int minSegments = 2;
+                if (needsYield)
+                {
+                    bool hasStarvingChannel = _channels.Any(kvp =>
+                        kvp.Value.SubscriberCount > 0
+                        && kvp.Value.StreamId != buffer.StreamId
+                        && kvp.Value.GetSegments().Count == 0);
+                    minSegments = hasStarvingChannel ? 1 : 2;
+                }
+
                 for (int i = completedCount; i < safeCount; i++)
                 {
                     string segFilename = $"c{captureId}_{i:D5}.ts";
@@ -519,56 +534,38 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     bool isDiscontinuity = firstSegment && buffer.GetSegments().Count > 0;
                     buffer.AddSegment(segment, isDiscontinuity);
                     firstSegment = false;
+                    completedCount = i + 1;
 
                     _logger.LogInformation(
                         "Continuous capture: segment {Filename} ready for stream {StreamId}",
                         segFilename,
                         buffer.StreamId);
+
+                    // Check yield immediately after each segment to prevent over-capture.
+                    // Without this, burst segments (e.g. 5 arriving in one poll) would all
+                    // be processed before the yield check, starving other channels.
+                    if (needsYield && completedCount >= minSegments)
+                    {
+                        _logger.LogInformation(
+                            "Yielding capture for stream {StreamId} after {Count} segments (live={IsLive})",
+                            buffer.StreamId,
+                            completedCount,
+                            buffer.LiveViewerCount > 0);
+                        shouldYield = true;
+                        break;
+                    }
                 }
 
+                if (shouldYield)
+                {
+                    break;
+                }
+
+                // Update completedCount for segments we didn't process yet
                 completedCount = Math.Max(completedCount, safeCount);
 
                 // Periodic pruning
                 buffer.PruneSegments(retentionSeconds);
-
-                // Yield to other channels if more active channels than connections.
-                // Priority: live TV viewers get more capture time than recording-only channels.
-                int activeCount = _channels.Count(kvp => kvp.Value.SubscriberCount > 0);
-                if (activeCount > _maxConnections && completedCount > 0)
-                {
-                    bool hasStarvingChannel = _channels.Any(kvp =>
-                        kvp.Value.SubscriberCount > 0
-                        && kvp.Value.StreamId != buffer.StreamId
-                        && kvp.Value.GetSegments().Count == 0);
-
-                    bool hasLiveWaiting = _channels.Any(kvp =>
-                        kvp.Value.LiveViewerCount > 0
-                        && kvp.Value.StreamId != buffer.StreamId);
-
-                    // Yield quickly to keep round-robin responsive.
-                    // With 3+ channels sharing 1 connection, fast cycling is critical.
-                    // Each yield produces ~2 segments (1 during capture + 1 in finalization).
-                    int minSegments;
-                    if (hasStarvingChannel)
-                    {
-                        minSegments = 1;
-                    }
-                    else
-                    {
-                        minSegments = 2;
-                    }
-
-                    if (completedCount >= minSegments)
-                    {
-                        _logger.LogInformation(
-                            "Yielding capture for stream {StreamId} after {Count} segments (live={IsLive}, liveWaiting={LiveWaiting})",
-                            buffer.StreamId,
-                            completedCount,
-                            buffer.LiveViewerCount > 0,
-                            hasLiveWaiting);
-                        break;
-                    }
-                }
 
                 await Task.Delay(200, ct).ConfigureAwait(false);
             }
