@@ -30,6 +30,24 @@ stop_all_recordings() {
     done
 }
 
+# Aggressively drain all recordings — retries until none remain.
+# Timers can re-fire after stop, so we loop to catch stragglers.
+drain_all_recordings() {
+    local attempt
+    for attempt in 1 2 3; do
+        stop_all_recordings
+        sleep 3
+        local remaining
+        remaining=$(curl -s "$API/Test/ActiveRecordings" 2>/dev/null || echo "[]")
+        local cnt
+        cnt=$(echo "$remaining" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+        if [ "${cnt:-0}" -eq 0 ]; then
+            return 0
+        fi
+        log "Still $cnt active recordings after attempt $attempt, retrying..."
+    done
+}
+
 # Remove all IntegrationTest_* artifacts from the recordings directory inside the container.
 clean_test_files() {
     log "Removing IntegrationTest files from container..."
@@ -101,8 +119,21 @@ test_single_recording() {
     timer_id=$(start_recording $STREAM_101) || return
 
     log "Started recording on stream $STREAM_101, timer: $timer_id"
-    log "Waiting 25s for segments to accumulate..."
-    sleep 25
+
+    # Check HLS playlist appears within 15s (latency check)
+    log "Checking segments appear within 15s..."
+    sleep 15
+    local early_playlist early_segs
+    early_playlist=$(curl -s "$API/Recordings/$timer_id/stream.m3u8" 2>/dev/null)
+    early_segs=$(echo "$early_playlist" | grep -c "#EXTINF:" || true)
+    if [ "${early_segs:-0}" -ge 2 ]; then
+        pass "Segments available within 15s ($early_segs segments)"
+    else
+        fail "Too slow: only $early_segs segments after 15s (expected >=2)"
+    fi
+
+    # Wait a bit more for stream data to accumulate
+    sleep 10
 
     # Verify recording is active
     local active
@@ -178,8 +209,24 @@ test_two_recordings() {
     timer2=$(start_recording $STREAM_102) || return
 
     log "Started recordings: stream $STREAM_101 ($timer1), stream $STREAM_102 ($timer2)"
-    log "Waiting 25s for both to accumulate data..."
-    sleep 25
+
+    # Early latency check: both should have segments within 20s
+    log "Checking both have segments within 20s..."
+    sleep 20
+    local p1 p2 seg1 seg2
+    p1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
+    p2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null)
+    seg1=$(echo "$p1" | grep -c "#EXTINF:" || true)
+    seg2=$(echo "$p2" | grep -c "#EXTINF:" || true)
+    log "After 20s: stream $STREAM_101=$seg1 segs, stream $STREAM_102=$seg2 segs"
+
+    if [ "${seg1:-0}" -ge 1 ] && [ "${seg2:-0}" -ge 1 ]; then
+        pass "Both recordings have segments within 20s ($seg1 and $seg2)"
+    else
+        fail "Latency too high: stream 101=$seg1, stream 102=$seg2 after 20s (need >=1 each)"
+    fi
+
+    sleep 5
 
     # Verify both are active
     local active count
@@ -572,10 +619,11 @@ test_parallel_stream_fairness() {
 
     log "Started recordings: stream $STREAM_101 ($timer1), stream $STREAM_102 ($timer2)"
 
-    # Check BOTH streams have segments within 25s (not just one)
-    # With maxConnections=1, round-robin needs ~14s per channel (8s startup + 2 segments)
-    log "Checking both streams get segments within 25s..."
-    sleep 25
+    # Check BOTH streams have segments within 20s (not just one)
+    # With optimized ffmpeg (nobuffer), startup should be ~3s, so 20s
+    # allows for ~2 full round-robin cycles
+    log "Checking both streams get segments within 20s..."
+    sleep 20
 
     local p1 p2 seg1 seg2
     p1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
@@ -583,23 +631,23 @@ test_parallel_stream_fairness() {
     seg1=$(echo "$p1" | grep -c "#EXTINF:" || true)
     seg2=$(echo "$p2" | grep -c "#EXTINF:" || true)
 
-    log "After 25s: stream $STREAM_101 has $seg1 segments, stream $STREAM_102 has $seg2 segments"
+    log "After 20s: stream $STREAM_101 has $seg1 segments, stream $STREAM_102 has $seg2 segments"
 
     if [ "${seg1:-0}" -ge 1 ]; then
-        pass "Stream $STREAM_101 has data within 25s ($seg1 segments)"
+        pass "Stream $STREAM_101 has data within 20s ($seg1 segments)"
     else
-        fail "Stream $STREAM_101 has no data after 25s (starved)"
+        fail "Stream $STREAM_101 has no data after 20s (starved)"
     fi
 
     if [ "${seg2:-0}" -ge 1 ]; then
-        pass "Stream $STREAM_102 has data within 25s ($seg2 segments)"
+        pass "Stream $STREAM_102 has data within 20s ($seg2 segments)"
     else
-        fail "Stream $STREAM_102 has no data after 25s (starved)"
+        fail "Stream $STREAM_102 has no data after 20s (starved)"
     fi
 
     # Wait longer and check fairness: segment counts should be within 3:1 ratio
-    log "Waiting 35s more to check fairness..."
-    sleep 35
+    log "Waiting 40s more to check fairness..."
+    sleep 40
 
     p1=$(curl -s "$API/Recordings/$timer1/stream.m3u8" 2>/dev/null)
     p2=$(curl -s "$API/Recordings/$timer2/stream.m3u8" 2>/dev/null)
@@ -608,14 +656,14 @@ test_parallel_stream_fairness() {
 
     log "After 60s total: stream $STREAM_101=$seg1 segs, stream $STREAM_102=$seg2 segs"
 
-    # Both should have a reasonable number of segments (at least 3 each)
-    if [ "${seg1:-0}" -ge 3 ] && [ "${seg2:-0}" -ge 3 ]; then
-        pass "Both streams have >= 3 segments ($seg1 and $seg2)"
+    # Both should have a reasonable number of segments (at least 5 each in 60s)
+    if [ "${seg1:-0}" -ge 5 ] && [ "${seg2:-0}" -ge 5 ]; then
+        pass "Both streams have >= 5 segments ($seg1 and $seg2)"
     else
-        fail "One stream starved: $STREAM_101=$seg1, $STREAM_102=$seg2 (need >=3 each)"
+        fail "Too few segments in 60s: $STREAM_101=$seg1, $STREAM_102=$seg2 (need >=5 each)"
     fi
 
-    # Check fairness ratio: neither stream should have >3x the segments of the other
+    # Check fairness ratio: neither stream should have >2x the segments of the other
     local ratio
     if [ "${seg1:-1}" -gt "${seg2:-1}" ]; then
         ratio=$((seg1 / (seg2 > 0 ? seg2 : 1)))
@@ -623,8 +671,8 @@ test_parallel_stream_fairness() {
         ratio=$((seg2 / (seg1 > 0 ? seg1 : 1)))
     fi
 
-    if [ "$ratio" -le 3 ]; then
-        pass "Segment ratio is fair ($ratio:1, threshold 3:1)"
+    if [ "$ratio" -le 2 ]; then
+        pass "Segment ratio is fair ($ratio:1, threshold 2:1)"
     else
         fail "Unfair ratio $ratio:1 — one stream is starving ($STREAM_101=$seg1, $STREAM_102=$seg2)"
     fi
@@ -766,15 +814,13 @@ wait_for_jellyfin
 
 # Stop any leftover recordings from previous runs
 log "Cleaning up leftover recordings..."
-stop_all_recordings
-sleep 5
+drain_all_recordings
 echo ""
 
 test_single_recording
 echo ""
 # Ensure clean state before keepalive test
-stop_all_recordings
-sleep 3
+drain_all_recordings
 test_stream_keepalive
 echo ""
 test_two_recordings
@@ -782,25 +828,21 @@ echo ""
 test_recording_stops
 echo ""
 # Ensure clean state before HLS tests
-stop_all_recordings
-sleep 5
+drain_all_recordings
 test_hls_playback
 echo ""
 # Ensure clean state before ffprobe test
-stop_all_recordings
-sleep 5
+drain_all_recordings
 test_ffprobe_hls
 echo ""
 test_discontinuity_tags
 echo ""
 # Ensure clean state before parallel stream test
-stop_all_recordings
-sleep 5
+drain_all_recordings
 test_parallel_stream_fairness
 echo ""
 # Ensure clean state before staggered start test
-stop_all_recordings
-sleep 5
+drain_all_recordings
 test_staggered_start
 echo ""
 

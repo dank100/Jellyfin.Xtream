@@ -401,7 +401,8 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = $"{userAgentArg}-i \"{url}\""
+            Arguments = $"-fflags +nobuffer -analyzeduration 3000000 -probesize 3000000 "
+                + $"{userAgentArg}-i \"{url}\""
                 + " -map 0 -dn -sn -c:v copy -c:a aac -b:a 192k"
                 + $" -f segment -segment_time {sliceSeconds} -segment_format mpegts"
                 + $" -segment_list \"{segListPath}\" -segment_list_type flat"
@@ -556,41 +557,13 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     }
                 }
 
-                await Task.Delay(500, ct).ConfigureAwait(false);
+                await Task.Delay(200, ct).ConfigureAwait(false);
             }
 
-            // When ffmpeg exits, finalize any remaining segments from the list.
-            if (File.Exists(segListPath))
-            {
-                try
-                {
-                    var finalLines = await File.ReadAllLinesAsync(segListPath, CancellationToken.None).ConfigureAwait(false);
-                    for (int i = completedCount; i < finalLines.Length; i++)
-                    {
-                        string segFilename = $"c{captureId}_{i:D5}.ts";
-                        string segPath = Path.Combine(buffer.SegmentDir, segFilename);
-
-                        if (File.Exists(segPath) && new FileInfo(segPath).Length > 0)
-                        {
-                            var segment = new SegmentInfo
-                            {
-                                Filename = segFilename,
-                                DurationSeconds = sliceSeconds,
-                                CapturedUtc = DateTime.UtcNow,
-                            };
-
-                            bool isDiscontinuity = firstSegment && buffer.GetSegments().Count > 0;
-                            buffer.AddSegment(segment, isDiscontinuity);
-                            firstSegment = false;
-                            completedCount = i + 1;
-                        }
-                    }
-                }
-                catch (IOException)
-                {
-                    // Best effort
-                }
-            }
+            // When ffmpeg exits via yield/cancel, the loop exits before
+            // the last segment is processed (N+1 safety rule). Final segment
+            // processing is deferred to after WaitForExitAsync in the finally
+            // block to ensure ffmpeg has finished writing.
         }
         catch (OperationCanceledException)
         {
@@ -619,6 +592,43 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 catch
                 {
                     process.Kill();
+                }
+            }
+
+            // Now that ffmpeg has fully exited, process any remaining segments.
+            // The last listed segment is safe to consume because ffmpeg has
+            // closed the file and flushed the segment list.
+            bool gracefulExit = process.HasExited && process.ExitCode == 0;
+            if (File.Exists(segListPath))
+            {
+                try
+                {
+                    var finalLines = await File.ReadAllLinesAsync(segListPath, CancellationToken.None).ConfigureAwait(false);
+                    int finalCount = gracefulExit ? finalLines.Length : Math.Max(0, finalLines.Length - 1);
+                    for (int i = completedCount; i < finalCount; i++)
+                    {
+                        string segFilename = $"c{captureId}_{i:D5}.ts";
+                        string segPath = Path.Combine(buffer.SegmentDir, segFilename);
+
+                        if (File.Exists(segPath) && new FileInfo(segPath).Length > 0)
+                        {
+                            var segment = new SegmentInfo
+                            {
+                                Filename = segFilename,
+                                DurationSeconds = sliceSeconds,
+                                CapturedUtc = DateTime.UtcNow,
+                            };
+
+                            bool isDiscontinuity = firstSegment && buffer.GetSegments().Count > 0;
+                            buffer.AddSegment(segment, isDiscontinuity);
+                            firstSegment = false;
+                            completedCount = i + 1;
+                        }
+                    }
+                }
+                catch (IOException)
+                {
+                    // Best effort
                 }
             }
 
