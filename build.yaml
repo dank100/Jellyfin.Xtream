@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.9.39.0"
+version: "0.9.40.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -12,7 +12,8 @@ owner: "Kevinjil"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  Fix multiplexer playlist endpoint (remove [Produces] attribute that blocked response).
-  Fix recording seekbar: serve EVENT playlist as-is (no EXT-X-ENDLIST injection) so
-  HLS.js and seekbar both agree on live edge position. Backward seeking through
-  all recorded segments is supported.
+  Switch recording playback from TS tailing to HLS playlist approach for reliable
+  seeking and playback during multiplexer gaps. Fix timer restart bug where cancelled
+  recordings were re-started by CheckTimers. Fix recording file cleanup so intermediate
+  .ts, .strm, and segment files are always removed. Add integration test suite (21
+  assertions covering single/dual recordings, stream keepalive, HLS playback, cleanup).
