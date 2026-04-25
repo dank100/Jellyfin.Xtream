@@ -319,7 +319,11 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
 
                     try
                     {
-                        await CaptureStreamAsync(buffer, sliceSeconds, retentionSeconds, ct).ConfigureAwait(false);
+                        int produced = await CaptureStreamAsync(buffer, sliceSeconds, retentionSeconds, ct).ConfigureAwait(false);
+                        if (produced == 0)
+                        {
+                            _logger.LogWarning("Capture for stream {StreamId} produced 0 segments, skipping turn", buffer.StreamId);
+                        }
                     }
                     catch (OperationCanceledException)
                     {
@@ -384,7 +388,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     /// One persistent connection produces segment files automatically.
     /// Runs until cancelled, the stream ends, or we need to yield to other channels.
     /// </summary>
-    private async Task CaptureStreamAsync(ChannelBuffer buffer, int sliceSeconds, int retentionSeconds, CancellationToken ct)
+    private async Task<int> CaptureStreamAsync(ChannelBuffer buffer, int sliceSeconds, int retentionSeconds, CancellationToken ct)
     {
         PluginConfiguration config = Plugin.Instance.Configuration;
         string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{buffer.StreamId}";
@@ -401,7 +405,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = $"-fflags +nobuffer -analyzeduration 500000 -probesize 500000 "
+            Arguments = $"-fflags +nobuffer -analyzeduration 1000000 -probesize 1000000 "
                 + $"{userAgentArg}-i \"{url}\""
                 + " -map 0 -dn -sn -c copy"
                 + $" -f segment -segment_time {sliceSeconds} -segment_format mpegts"
@@ -504,15 +508,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 // Pre-compute yield parameters once per poll cycle.
                 int activeCount = _channels.Count(kvp => kvp.Value.SubscriberCount > 0);
                 bool needsYield = activeCount > _maxConnections;
-                int minSegments = 4;
-                if (needsYield)
-                {
-                    bool hasStarvingChannel = _channels.Any(kvp =>
-                        kvp.Value.SubscriberCount > 0
-                        && kvp.Value.StreamId != buffer.StreamId
-                        && kvp.Value.GetSegments().Count == 0);
-                    minSegments = hasStarvingChannel ? 2 : 4;
-                }
+                const int minSegments = 4;
 
                 for (int i = completedCount; i < safeCount; i++)
                 {
@@ -688,6 +684,8 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 buffer.StreamId,
                 completedCount);
         }
+
+        return completedCount;
     }
 
     private static string GetFfmpegPath()
