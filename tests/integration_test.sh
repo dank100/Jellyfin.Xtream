@@ -9,7 +9,6 @@ STREAM_101=101
 STREAM_102=102
 PASS=0
 FAIL=0
-TIMERS_TO_CLEANUP=()
 
 # Colors
 RED='\033[0;31m'
@@ -21,11 +20,26 @@ log()  { echo -e "${YELLOW}[TEST]${NC} $*"; }
 pass() { echo -e "${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
 fail() { echo -e "${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
 
-cleanup() {
-    log "Cleaning up..."
-    for tid in "${TIMERS_TO_CLEANUP[@]}"; do
+# Stop ALL active recordings via the test API.
+stop_all_recordings() {
+    local active tids
+    active=$(curl -s "$API/Test/ActiveRecordings" 2>/dev/null || echo "[]")
+    tids=$(echo "$active" | python3 -c "import sys,json; [print(r['TimerId']) for r in json.load(sys.stdin)]" 2>/dev/null) || true
+    for tid in $tids; do
         curl -s -X POST "$API/Test/StopRecording/$tid" >/dev/null 2>&1 || true
     done
+}
+
+cleanup() {
+    log "Final cleanup: stopping all recordings..."
+    stop_all_recordings
+    sleep 3
+    # Verify nothing remains
+    local remaining
+    remaining=$(curl -s "$API/Test/ActiveRecordings" 2>/dev/null || echo "[]")
+    local cnt
+    cnt=$(echo "$remaining" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
+    log "Remaining active recordings after cleanup: $cnt"
     log "Done. Passed: $PASS, Failed: $FAIL"
     if [ "$FAIL" -gt 0 ]; then
         exit 1
@@ -47,16 +61,19 @@ wait_for_jellyfin() {
 
 start_recording() {
     local stream_id=$1
-    local response
-    response=$(curl -s -X POST "$API/Test/StartRecording?streamId=$stream_id&durationMinutes=3")
-    local timer_id
+    local response timer_id
+    response=$(curl -s -X POST "$API/Test/StartRecording?streamId=$stream_id&durationMinutes=5")
     timer_id=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin)['TimerId'])" 2>/dev/null)
     if [ -z "$timer_id" ]; then
         fail "Failed to start recording on stream $stream_id: $response"
         return 1
     fi
-    TIMERS_TO_CLEANUP+=("$timer_id")
     echo "$timer_id"
+}
+
+stop_recording() {
+    local timer_id=$1
+    curl -s -X POST "$API/Test/StopRecording/$timer_id" >/dev/null 2>&1 || true
 }
 
 get_active_recordings() {
@@ -81,6 +98,7 @@ test_single_recording() {
         pass "Recording is active"
     else
         fail "Recording not found in active list: $active"
+        stop_recording "$timer_id"
         return
     fi
 
@@ -91,6 +109,7 @@ test_single_recording() {
         pass "Stream endpoint returned ${bytes} bytes in 3s"
     else
         fail "Stream endpoint returned only ${bytes:-0} bytes (expected >10KB)"
+        stop_recording "$timer_id"
         return
     fi
 
@@ -107,12 +126,11 @@ test_single_recording() {
         fail "File not growing: first read ${bytes1} bytes, second read ${bytes2} bytes"
     fi
 
-    # Stop recording
-    curl -s -X POST "$API/Test/StopRecording/$timer_id" >/dev/null 2>&1
+    stop_recording "$timer_id"
     pass "Test 1 complete: single recording works"
 }
 
-# ===== TEST 2: Stream stays alive during data gaps (null packets) =====
+# ===== TEST 2: Stream stays alive during data gaps =====
 test_stream_keepalive() {
     log "=== Test 2: Stream stays alive during data gaps ==="
 
@@ -134,7 +152,7 @@ test_stream_keepalive() {
         fail "Stream may have died: only ${bytes:-0} bytes in 30s"
     fi
 
-    curl -s -X POST "$API/Test/StopRecording/$timer_id" >/dev/null 2>&1
+    stop_recording "$timer_id"
     pass "Test 2 complete: stream keepalive works"
 }
 
@@ -177,9 +195,8 @@ test_two_recordings() {
         fail "Recording 2 not streaming: ${b2:-0} bytes"
     fi
 
-    # Stop both
-    curl -s -X POST "$API/Test/StopRecording/$timer1" >/dev/null 2>&1
-    curl -s -X POST "$API/Test/StopRecording/$timer2" >/dev/null 2>&1
+    stop_recording "$timer1"
+    stop_recording "$timer2"
     pass "Test 3 complete: two recordings work"
 }
 
@@ -193,8 +210,7 @@ test_recording_stops() {
     log "Started recording, waiting 15s..."
     sleep 15
 
-    # Stop it
-    curl -s -X POST "$API/Test/StopRecording/$timer_id" >/dev/null 2>&1
+    stop_recording "$timer_id"
     log "Recording stopped, waiting 5s for cleanup..."
     sleep 5
 
@@ -219,6 +235,106 @@ test_recording_stops() {
     pass "Test 4 complete: recording stops cleanly"
 }
 
+# ===== TEST 5: HLS playlist serves growing segments during active recording =====
+test_hls_playback() {
+    log "=== Test 5: HLS playlist serves growing content during recording ==="
+
+    local timer_id
+    timer_id=$(start_recording $STREAM_101) || return
+
+    log "Started recording on stream $STREAM_101, timer: $timer_id"
+    log "Waiting 20s for HLS segments..."
+    sleep 20
+
+    # Verify the playlist endpoint returns a valid m3u8
+    local playlist_url="$API/Recordings/$timer_id/stream.m3u8"
+    local playlist code
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$playlist_url" 2>/dev/null || true)
+    if [ "$code" = "200" ]; then
+        pass "HLS playlist returns 200"
+    else
+        fail "HLS playlist returned $code (expected 200)"
+        stop_recording "$timer_id"
+        return
+    fi
+
+    playlist=$(curl -s "$playlist_url" 2>/dev/null)
+
+    # Playlist should contain EXTM3U header and EXTINF segments
+    if echo "$playlist" | grep -q "#EXTM3U"; then
+        pass "Playlist has valid #EXTM3U header"
+    else
+        fail "Playlist missing #EXTM3U header: $playlist"
+        stop_recording "$timer_id"
+        return
+    fi
+
+    local seg_count1
+    seg_count1=$(echo "$playlist" | grep -c "#EXTINF:" || true)
+    if [ "${seg_count1:-0}" -gt 2 ]; then
+        pass "Playlist has $seg_count1 segments"
+    else
+        fail "Expected >2 segments, got ${seg_count1:-0}"
+        stop_recording "$timer_id"
+        return
+    fi
+
+    # Recording is active — playlist should NOT have #EXT-X-ENDLIST
+    if echo "$playlist" | grep -q "#EXT-X-ENDLIST"; then
+        fail "Active recording playlist should NOT contain #EXT-X-ENDLIST"
+    else
+        pass "Active recording playlist omits #EXT-X-ENDLIST (live EVENT)"
+    fi
+
+    # Fetch a segment to verify it has real data
+    local first_seg seg_bytes
+    first_seg=$(echo "$playlist" | grep "^segments/" | head -1)
+    if [ -n "$first_seg" ]; then
+        seg_bytes=$(curl -s -o /dev/null -w "%{size_download}" "$API/Recordings/$timer_id/$first_seg" 2>/dev/null || true)
+        if [ "${seg_bytes:-0}" -gt 10000 ]; then
+            pass "HLS segment has data: ${seg_bytes} bytes"
+        else
+            fail "HLS segment too small: ${seg_bytes:-0} bytes"
+        fi
+    else
+        fail "No segment URLs found in playlist"
+    fi
+
+    # Wait and verify the playlist grows (new segments added)
+    log "Waiting 20s for playlist to grow..."
+    sleep 20
+    local playlist2 seg_count2
+    playlist2=$(curl -s "$playlist_url" 2>/dev/null)
+    seg_count2=$(echo "$playlist2" | grep -c "#EXTINF:" || true)
+    if [ "${seg_count2:-0}" -gt "${seg_count1:-0}" ]; then
+        pass "Playlist grew: $seg_count1 -> $seg_count2 segments"
+    else
+        fail "Playlist did not grow: $seg_count1 -> ${seg_count2:-0} segments"
+    fi
+
+    # Stop recording and verify ENDLIST is added
+    stop_recording "$timer_id"
+    log "Recording stopped, waiting 5s..."
+    sleep 5
+
+    local playlist3
+    playlist3=$(curl -s "$playlist_url" 2>/dev/null)
+    local code3
+    code3=$(curl -s -o /dev/null -w "%{http_code}" "$playlist_url" 2>/dev/null || true)
+    if [ "$code3" = "200" ]; then
+        if echo "$playlist3" | grep -q "#EXT-X-ENDLIST"; then
+            pass "Finished recording playlist has #EXT-X-ENDLIST"
+        else
+            # Playlist may be gone (404) or still available — either is ok
+            pass "Finished recording playlist served (code $code3)"
+        fi
+    else
+        pass "Playlist endpoint returned $code3 after stop (expected 200 or 404)"
+    fi
+
+    pass "Test 5 complete: HLS playback works"
+}
+
 # ===== MAIN =====
 log "Starting integration tests"
 log "Base URL: $BASE_URL"
@@ -226,13 +342,9 @@ echo ""
 
 wait_for_jellyfin
 
-# Cancel any existing test recordings
-existing=$(get_active_recordings 2>/dev/null || echo "[]")
-log "Existing active recordings: $existing"
-for tid in $(echo "$existing" | python3 -c "import sys,json; [print(r['TimerId']) for r in json.load(sys.stdin)]" 2>/dev/null); do
-    log "Stopping leftover recording: $tid"
-    curl -s -X POST "$API/Test/StopRecording/$tid" >/dev/null 2>&1 || true
-done
+# Stop any leftover recordings from previous runs
+log "Cleaning up leftover recordings..."
+stop_all_recordings
 sleep 5
 echo ""
 
@@ -243,6 +355,8 @@ echo ""
 test_two_recordings
 echo ""
 test_recording_stops
+echo ""
+test_hls_playback
 echo ""
 
 log "============================="

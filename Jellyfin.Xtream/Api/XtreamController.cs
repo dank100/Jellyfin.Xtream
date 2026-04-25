@@ -283,12 +283,11 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             }
         }
 
-        // Add #EXT-X-ENDLIST so hls.js treats the playlist as VOD, enabling
-        // full backward seeking from segment 0 to the last segment.
-        // Without this, hls.js treats EVENT playlists as live and limits the
-        // seekable range to a small window near the live edge.
-        // Also add #EXT-X-START to position the player near the live edge.
-        if (result.Count > 0 && !result.Any(l => l.Contains("#EXT-X-ENDLIST", StringComparison.Ordinal)))
+        // When the recording is still active, serve an EVENT playlist WITHOUT
+        // #EXT-X-ENDLIST so ffmpeg/hls.js poll for new segments as the recording grows.
+        // Once the recording finishes, add ENDLIST + START tag for VOD-style seeking.
+        bool isActive = recordingEngine.IsRecordingActive(timerId);
+        if (!isActive && result.Count > 0 && !result.Any(l => l.Contains("#EXT-X-ENDLIST", StringComparison.Ordinal)))
         {
             // Insert START tag after the header (before first segment)
             int insertIdx = result.FindIndex(l => l.StartsWith("#EXTINF:", StringComparison.Ordinal));

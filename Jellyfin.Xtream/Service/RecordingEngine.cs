@@ -276,7 +276,7 @@ public class RecordingEngine : IHostedService, IDisposable
         Directory.CreateDirectory(segmentDir);
         string playlistPath = Path.Combine(segmentDir, HlsPlaylistName);
 
-        string tsApiUrl = $"{_appHost.GetSmartApiUrl(IPAddress.Any)}/Xtream/Recordings/{timer.Id}/stream.ts";
+        string hlsApiUrl = $"{_appHost.GetSmartApiUrl(IPAddress.Any)}/Xtream/Recordings/{timer.Id}/stream.m3u8";
         string strmPath = Path.Combine(RecordingsPath, baseName + ".strm");
 
         _logger.LogInformation("Recording started: {Name} -> {TsPath}", timer.Name, tsPath);
@@ -284,9 +284,9 @@ public class RecordingEngine : IHostedService, IDisposable
         recording.TsFilePath = tsPath;
         recording.StrmFilePath = strmPath;
 
-        // Write .strm file pointing to our TS endpoint. The endpoint serves the
-        // current file snapshot so ffprobe completes quickly.
-        await File.WriteAllTextAsync(strmPath, tsApiUrl).ConfigureAwait(false);
+        // Write .strm file pointing to our HLS playlist endpoint. ffmpeg natively
+        // handles EVENT playlists, polling for new segments as the recording grows.
+        await File.WriteAllTextAsync(strmPath, hlsApiUrl).ConfigureAwait(false);
 
         try
         {
