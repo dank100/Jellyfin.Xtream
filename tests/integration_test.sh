@@ -444,21 +444,27 @@ except Exception as e:
         fail "ffprobe did not find expected streams"
     fi
 
-    # Now simulate what the Jellyfin transcoder does: run ffmpeg for a few seconds
-    log "Running short ffmpeg transcode (5s) to simulate Jellyfin playback..."
-    local ffmpeg_exit
-    docker exec jellyfin-dev timeout 8 /usr/lib/jellyfin-ffmpeg/ffmpeg \
+    # Now simulate what the Jellyfin transcoder does: actual transcode (not just copy)
+    # Production uses libsvtav1 + libfdk_aac which triggers exit 234 on corrupt packets
+    log "Running short ffmpeg transcode (5s) with real codecs to simulate Jellyfin..."
+    local ffmpeg_output ffmpeg_exit
+    ffmpeg_output=$(docker exec jellyfin-dev bash -c "timeout 15 /usr/lib/jellyfin-ffmpeg/ffmpeg \
         -analyzeduration 200000000 -probesize 1073741824 \
-        -i "$internal_url" \
-        -t 5 -c copy -f mpegts -y /dev/null \
-        2>/dev/null || ffmpeg_exit=$?
-    ffmpeg_exit=${ffmpeg_exit:-0}
+        -i '$internal_url' \
+        -t 5 -map 0:v:0 -map 0:a:0 \
+        -codec:v:0 libx264 -preset ultrafast -b:v 1000000 \
+        -codec:a:0 aac -b:a 128000 \
+        -copyts -avoid_negative_ts disabled \
+        -f mpegts -y /dev/null 2>&1; echo EXIT_CODE:\$?" 2>/dev/null)
+    ffmpeg_exit=$(echo "$ffmpeg_output" | grep "EXIT_CODE:" | tail -1 | cut -d: -f2)
+    ffmpeg_exit=${ffmpeg_exit:-999}
 
     # exit 0 = success, exit 124 = timeout killed it (also ok — means it was still running)
     if [ "$ffmpeg_exit" -eq 0 ] || [ "$ffmpeg_exit" -eq 124 ]; then
-        pass "ffmpeg transcode test succeeded (exit $ffmpeg_exit)"
+        pass "ffmpeg real transcode succeeded (exit $ffmpeg_exit)"
     else
-        fail "ffmpeg transcode failed with exit code $ffmpeg_exit"
+        fail "ffmpeg real transcode failed with exit code $ffmpeg_exit (would be 234 without discontinuity tags)"
+        echo "$ffmpeg_output" | grep -iE "corrupt|error|fail" | tail -10
     fi
 
     stop_recording "$timer_id"
@@ -526,18 +532,26 @@ test_discontinuity_tags() {
         fail "Recording 2 missing discontinuity tags"
     fi
 
-    # Verify ffmpeg can transcode the playlist WITH discontinuity tags
-    log "Verifying ffmpeg can transcode playlist with discontinuity tags..."
+    # Verify ffmpeg can TRANSCODE (not just copy) the playlist WITH discontinuity tags
+    # This is the exact scenario that causes exit 234 in production without discontinuity tags
+    log "Verifying ffmpeg can transcode playlist with discontinuity tags (real codecs)..."
     local ffmpeg_ok
-    ffmpeg_ok=$(docker exec jellyfin-dev bash -c "timeout 8 /usr/lib/jellyfin-ffmpeg/ffmpeg -analyzeduration 200M -probesize 1G -i 'http://localhost:8096/Xtream/Recordings/$timer1/stream.m3u8' -t 5 -c copy -f mpegts -y /dev/null 2>&1; echo EXIT:\$?" 2>/dev/null)
+    ffmpeg_ok=$(docker exec jellyfin-dev bash -c "timeout 15 /usr/lib/jellyfin-ffmpeg/ffmpeg \
+        -analyzeduration 200M -probesize 1G \
+        -i 'http://localhost:8096/Xtream/Recordings/$timer1/stream.m3u8' \
+        -t 5 -map 0:v:0 -map 0:a:0 \
+        -codec:v:0 libx264 -preset ultrafast -b:v 1000000 \
+        -codec:a:0 aac -b:a 128000 \
+        -copyts -avoid_negative_ts disabled \
+        -f mpegts -y /dev/null 2>&1; echo EXIT:\$?" 2>/dev/null)
     local ffmpeg_exit
     ffmpeg_exit=$(echo "$ffmpeg_ok" | grep "EXIT:" | tail -1 | cut -d: -f2)
 
     if [ "$ffmpeg_exit" = "0" ]; then
-        pass "ffmpeg transcodes discontinuous recording OK"
+        pass "ffmpeg transcodes discontinuous recording OK (real codecs)"
     else
-        fail "ffmpeg failed on discontinuous recording (exit $ffmpeg_exit)"
-        echo "$ffmpeg_ok" | tail -15
+        fail "ffmpeg failed on discontinuous recording (exit $ffmpeg_exit — would be 234 without discontinuity tags)"
+        echo "$ffmpeg_ok" | grep -iE "corrupt|error|fail" | tail -10
     fi
 
     # Cleanup
