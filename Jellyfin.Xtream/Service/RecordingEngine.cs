@@ -369,13 +369,13 @@ public class RecordingEngine : IHostedService, IDisposable
                     hlsLines.Add(recSegName);
                     await File.WriteAllLinesAsync(playlistPath, hlsLines, ct).ConfigureAwait(false);
 
-                    if (!libraryNotified && tsStream.Length > 0)
+                    if (!libraryNotified && recSegCount >= 3)
                     {
                         libraryNotified = true;
                         _libraryMonitor.ReportFileSystemChanged(strmPath);
                         TriggerMediaScan();
                         TriggerGuideRefresh();
-                        _logger.LogInformation("Library notified of new recording: {Path}", strmPath);
+                        _logger.LogInformation("Library notified of new recording ({Segments} segments ready): {Path}", recSegCount, strmPath);
                     }
                 }
 

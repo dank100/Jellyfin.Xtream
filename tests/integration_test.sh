@@ -348,6 +348,123 @@ test_hls_playback() {
     pass "Test 5 complete: HLS playback works"
 }
 
+# ===== TEST 6: ffprobe can read the HLS playlist (simulates Jellyfin transcoder) =====
+test_ffprobe_hls() {
+    log "=== Test 6: ffprobe reads HLS playlist (simulates Jellyfin transcoder) ==="
+
+    local timer_id
+    timer_id=$(start_recording $STREAM_101) || return
+
+    log "Started recording on stream $STREAM_101, timer: $timer_id"
+
+    # Jellyfin's library scanner triggers playback as soon as the .strm appears.
+    # The HLS playlist may have 0 segments initially. Verify we handle this gracefully.
+    log "Checking early playlist availability (5s after start)..."
+    sleep 5
+    local early_code
+    early_code=$(curl -s -o /dev/null -w "%{http_code}" "$API/Recordings/$timer_id/stream.m3u8" 2>/dev/null || true)
+    if [ "$early_code" = "200" ] || [ "$early_code" = "404" ]; then
+        pass "Early playlist returns $early_code (acceptable before segments arrive)"
+    else
+        fail "Unexpected early playlist status: $early_code"
+    fi
+
+    # Wait for enough segments to accumulate
+    log "Waiting 25s for segments to accumulate..."
+    sleep 25
+
+    # Verify the playlist has content and all segments are fetchable
+    local playlist_url="$API/Recordings/$timer_id/stream.m3u8"
+    local playlist
+    playlist=$(curl -s "$playlist_url" 2>/dev/null)
+    local seg_count
+    seg_count=$(echo "$playlist" | grep -c "#EXTINF:" || true)
+    if [ "${seg_count:-0}" -lt 2 ]; then
+        fail "Not enough segments for ffprobe test: ${seg_count:-0}"
+        stop_recording "$timer_id"
+        return
+    fi
+    pass "Playlist has $seg_count segments for ffprobe test"
+
+    # Verify ALL segments are accessible (not just the first one)
+    local seg_urls all_ok seg_url seg_code
+    seg_urls=$(echo "$playlist" | grep "^segments/" || true)
+    all_ok=true
+    for seg_url in $seg_urls; do
+        seg_code=$(curl -s -o /dev/null -w "%{http_code}" "$API/Recordings/$timer_id/$seg_url" 2>/dev/null || true)
+        if [ "$seg_code" != "200" ]; then
+            fail "Segment $seg_url returned $seg_code (expected 200)"
+            all_ok=false
+            break
+        fi
+    done
+    if [ "$all_ok" = true ]; then
+        pass "All $seg_count segments return 200"
+    fi
+
+    # Run ffprobe inside the Jellyfin container (has ffmpeg installed)
+    # This simulates exactly what Jellyfin's transcoder does
+    local internal_url="http://localhost:8096/Xtream/Recordings/$timer_id/stream.m3u8"
+    log "Running ffprobe against HLS playlist inside container..."
+    local probe_output probe_exit
+    probe_output=$(docker exec jellyfin-dev /usr/lib/jellyfin-ffmpeg/ffprobe \
+        -analyzeduration 200000000 -probesize 1073741824 \
+        -i "$internal_url" \
+        -show_format -show_streams -print_format json \
+        2>&1) || probe_exit=$?
+    probe_exit=${probe_exit:-0}
+
+    if [ "$probe_exit" -eq 0 ]; then
+        pass "ffprobe succeeded (exit code 0)"
+    else
+        fail "ffprobe failed with exit code $probe_exit"
+        log "ffprobe output (last 20 lines):"
+        echo "$probe_output" | tail -20
+    fi
+
+    # Verify ffprobe found video and audio streams
+    if echo "$probe_output" | python3 -c "
+import sys, json
+try:
+    # ffprobe JSON is after the stderr lines
+    text = sys.stdin.read()
+    # Find the JSON part
+    start = text.index('{')
+    data = json.loads(text[start:])
+    codecs = [s['codec_type'] for s in data.get('streams', [])]
+    assert 'video' in codecs, f'No video stream found, codecs: {codecs}'
+    assert 'audio' in codecs, f'No audio stream found, codecs: {codecs}'
+    print(f'Found streams: {codecs}')
+except Exception as e:
+    print(f'Parse error: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null; then
+        pass "ffprobe found video and audio streams"
+    else
+        fail "ffprobe did not find expected streams"
+    fi
+
+    # Now simulate what the Jellyfin transcoder does: run ffmpeg for a few seconds
+    log "Running short ffmpeg transcode (5s) to simulate Jellyfin playback..."
+    local ffmpeg_exit
+    docker exec jellyfin-dev timeout 8 /usr/lib/jellyfin-ffmpeg/ffmpeg \
+        -analyzeduration 200000000 -probesize 1073741824 \
+        -i "$internal_url" \
+        -t 5 -c copy -f mpegts -y /dev/null \
+        2>/dev/null || ffmpeg_exit=$?
+    ffmpeg_exit=${ffmpeg_exit:-0}
+
+    # exit 0 = success, exit 124 = timeout killed it (also ok — means it was still running)
+    if [ "$ffmpeg_exit" -eq 0 ] || [ "$ffmpeg_exit" -eq 124 ]; then
+        pass "ffmpeg transcode test succeeded (exit $ffmpeg_exit)"
+    else
+        fail "ffmpeg transcode failed with exit code $ffmpeg_exit"
+    fi
+
+    stop_recording "$timer_id"
+    pass "Test 6 complete: ffprobe/ffmpeg HLS validation works"
+}
+
 # ===== MAIN =====
 log "Starting integration tests"
 log "Base URL: $BASE_URL"
@@ -370,6 +487,8 @@ echo ""
 test_recording_stops
 echo ""
 test_hls_playback
+echo ""
+test_ffprobe_hls
 echo ""
 
 log "============================="
