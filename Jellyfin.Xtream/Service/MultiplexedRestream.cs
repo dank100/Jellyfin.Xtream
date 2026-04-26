@@ -192,93 +192,21 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     private async Task PumpSegmentsAsync(ChannelBuffer channelBuffer, CancellationToken ct)
     {
         var initialSegments = channelBuffer.GetSegments();
-        // Use all available segments as prebuffer — the initial burst must be large
-        // enough to survive a full round-robin gap (~12s with 2 channels).
         int lastSegmentIndex = -1;
 
-        // Remuxer normalizes timestamps across concatenated capture segments.
-        // +igndts+genpts: ignores source DTS (which jump at capture boundaries)
-        //   and regenerates PTS from frame ordering.
-        // -loglevel error suppresses per-frame DTS warnings that overwhelm logging.
-        // -err_detect ignore_err: tolerate corrupt packets at capture boundaries.
-        var ffmpegPath = "/usr/lib/jellyfin-ffmpeg/ffmpeg";
-        var psi = new System.Diagnostics.ProcessStartInfo
-        {
-            FileName = ffmpegPath,
-            Arguments = "-loglevel error"
-                + " -fflags +genpts+igndts"
-                + " -err_detect ignore_err"
-                + " -f mpegts -i pipe:0"
-                + " -map 0 -c copy"
-                + " -f mpegts -mpegts_flags +resend_headers pipe:1",
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        using var ffmpeg = System.Diagnostics.Process.Start(psi);
-        if (ffmpeg == null)
-        {
-            _logger.LogError("Failed to start remuxer for channel {StreamId}", _streamId);
-            return;
-        }
-
-        _logger.LogInformation("Started remuxer for channel {StreamId}, PID {Pid}", _streamId, ffmpeg.Id);
-
-        // Read ffmpeg stdout into the buffer.
-        var readTask = Task.Run(
-            async () =>
-            {
-                long totalRead = 0;
-                try
-                {
-                    byte[] readBuf = new byte[262144];
-                    int bytesRead;
-                    while ((bytesRead = await ffmpeg.StandardOutput.BaseStream.ReadAsync(readBuf, ct).ConfigureAwait(false)) > 0)
-                    {
-                        await _buffer.WriteAsync(readBuf.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
-                        totalRead += bytesRead;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                }
-
-                _logger.LogInformation("Remuxer stdout reader finished for channel {StreamId}, total bytes: {Bytes}", _streamId, totalRead);
-            },
-            ct);
-
-        // Drain stderr to prevent buffer deadlock.
-        var stderrTask = Task.Run(
-            async () =>
-            {
-                try
-                {
-                    string? line;
-                    while ((line = await ffmpeg.StandardError.ReadLineAsync(ct).ConfigureAwait(false)) != null)
-                    {
-                        _logger.LogWarning("Remuxer stderr: {Line}", line);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                }
-            },
-            ct);
+        // In-process timestamp + continuity counter normalization — zero latency.
+        var tsRewriter = new TsTimestampRewriter();
 
         long totalWritten = 0;
         int segmentsWritten = 0;
-        byte[]? cachedSegmentData = null;
         var lastWriteTime = DateTime.UtcNow;
-        const int gapFillThresholdMs = 1500;
-        // Replay 40% of cached segment — balanced between keeping the remuxer
-        // producing output and minimizing replay bytes.
-        const double replayFraction = 0.40;
-        // Pace replay with frequent interrupt checks (20 chunks × 50ms = 1s).
-        const int paceChunks = 20;
-        const int paceDelayMs = 50;
+
+        // Gap-fill: write null TS packets (PID 0x1FFF) to keep the transcoder's
+        // TCP connection alive during capture gaps. Null packets carry no PTS/PES,
+        // so they cannot cause backward timestamps or PTS drift.
+        const int gapFillThresholdMs = 2000;
+        const int nullPacketCount = 100; // 100 × 188 = 18.8 KB per gap-fill write
+        byte[] nullTsPackets = BuildNullTsPackets(nullPacketCount);
 
         try
         {
@@ -306,21 +234,23 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                     try
                     {
                         byte[] data = await File.ReadAllBytesAsync(segPath, ct).ConfigureAwait(false);
-                        await ffmpeg.StandardInput.BaseStream.WriteAsync(data, ct).ConfigureAwait(false);
-                        await ffmpeg.StandardInput.BaseStream.FlushAsync(ct).ConfigureAwait(false);
+                        tsRewriter.Rewrite(data);
+                        await _buffer.WriteAsync(data, ct).ConfigureAwait(false);
                         totalWritten += data.Length;
                         segmentsWritten++;
                         lastSegmentIndex = globalIndex;
                         wroteAny = true;
-                        cachedSegmentData = data;
                         lastWriteTime = DateTime.UtcNow;
                         Interlocked.Add(ref _freshBytes, data.Length);
 
                         _logger.LogInformation(
-                            "Pump for channel {StreamId}: wrote segment {Filename} ({Bytes} bytes), total: {Segs} segments, {Total} bytes",
+                            "Pump for channel {StreamId}: wrote segment {Filename} ({Bytes} bytes, adjusted={Adjusted}, lastPts={LastPts}, adj={Adj}), total: {Segs} segments, {Total} bytes",
                             _streamId,
                             seg.Filename,
                             data.Length,
+                            tsRewriter.Adjustment != 0,
+                            tsRewriter.LastOutputPts,
+                            tsRewriter.Adjustment,
                             segmentsWritten,
                             totalWritten);
                     }
@@ -331,7 +261,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                     }
                     catch (IOException ex) when (ex is not FileNotFoundException)
                     {
-                        _logger.LogWarning(ex, "Pump write failed for segment {Filename}, remuxer may have exited", seg.Filename);
+                        _logger.LogWarning(ex, "Pump write failed for segment {Filename}", seg.Filename);
                         return;
                     }
                 }
@@ -339,66 +269,31 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                 if (!wroteAny)
                 {
                     double msSinceWrite = (DateTime.UtcNow - lastWriteTime).TotalMilliseconds;
-                    if (cachedSegmentData != null && msSinceWrite >= gapFillThresholdMs)
+                    if (segmentsWritten > 0 && msSinceWrite >= gapFillThresholdMs)
                     {
-                        // Replay a small portion of cached segment, paced and interruptible.
-                        // Between each chunk, check if fresh segments arrived — if so, stop
-                        // replaying immediately to minimize replay content.
-                        try
+                        // Check for fresh data before doing gap-fill work.
+                        var freshSegs = channelBuffer.GetSegments();
+                        bool hasFresh = false;
+                        for (int fi = 0; fi < freshSegs.Count; fi++)
                         {
-                            int replayLen = Math.Max(1, (int)(cachedSegmentData.Length * replayFraction));
-                            int chunkSize = Math.Max(1, replayLen / paceChunks);
-                            int written = 0;
-
-                            for (int offset = 0; offset < replayLen && !ct.IsCancellationRequested; offset += chunkSize)
+                            if (channelBuffer.GetGlobalIndex(fi) > lastSegmentIndex)
                             {
-                                // Check for fresh segments before each chunk — abort replay early.
-                                var freshSegs = channelBuffer.GetSegments();
-                                bool hasFresh = false;
-                                for (int fi = 0; fi < freshSegs.Count; fi++)
-                                {
-                                    if (channelBuffer.GetGlobalIndex(fi) > lastSegmentIndex)
-                                    {
-                                        hasFresh = true;
-                                        break;
-                                    }
-                                }
-
-                                if (hasFresh)
-                                {
-                                    _logger.LogDebug(
-                                        "Gap-fill for channel {StreamId}: aborting replay — fresh segment available ({Written} bytes written)",
-                                        _streamId,
-                                        written);
-                                    break;
-                                }
-
-                                int len = Math.Min(chunkSize, replayLen - offset);
-                                await ffmpeg.StandardInput.BaseStream.WriteAsync(
-                                    cachedSegmentData.AsMemory(offset, len), ct).ConfigureAwait(false);
-                                written += len;
-                                await Task.Delay(paceDelayMs, ct).ConfigureAwait(false);
-                            }
-
-                            if (written > 0)
-                            {
-                                await ffmpeg.StandardInput.BaseStream.FlushAsync(ct).ConfigureAwait(false);
-                                totalWritten += written;
-                                lastWriteTime = DateTime.UtcNow;
-                                Interlocked.Increment(ref _gapFillCount);
-                                Interlocked.Add(ref _gapFillBytes, written);
-
-                                _logger.LogDebug(
-                                    "Pump for channel {StreamId}: replayed {Bytes} bytes (of {Total}) to fill gap",
-                                    _streamId,
-                                    written,
-                                    cachedSegmentData.Length);
+                                hasFresh = true;
+                                break;
                             }
                         }
-                        catch (IOException)
+
+                        if (!hasFresh)
                         {
-                            _logger.LogWarning("Gap-fill write failed for channel {StreamId}, remuxer may have exited", _streamId);
-                            return;
+                            // Gap-fill: write null TS packets to keep the TCP connection
+                            // alive. Null packets (PID 0x1FFF) contain no PTS/PES data,
+                            // so they cannot cause backward timestamps or PTS drift.
+                            await _buffer.WriteAsync(nullTsPackets, ct).ConfigureAwait(false);
+
+                            totalWritten += nullTsPackets.Length;
+                            lastWriteTime = DateTime.UtcNow;
+                            Interlocked.Increment(ref _gapFillCount);
+                            Interlocked.Add(ref _gapFillBytes, nullTsPackets.Length);
                         }
                     }
                     else
@@ -422,24 +317,28 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                 _streamId,
                 segmentsWritten,
                 totalWritten);
-            try
-            {
-                ffmpeg.StandardInput.Close();
-            }
-            catch (IOException)
-            {
-            }
-
-            await readTask.ConfigureAwait(false);
-            await stderrTask.ConfigureAwait(false);
-            if (!ffmpeg.HasExited)
-            {
-                ffmpeg.Kill();
-            }
-            else
-            {
-                _logger.LogInformation("Remuxer for channel {StreamId} exited with code {Code}", _streamId, ffmpeg.ExitCode);
-            }
         }
+    }
+
+    /// <summary>
+    /// Builds a buffer of null TS packets (PID 0x1FFF). These are valid MPEG-TS
+    /// packets that carry no content (no PES/PTS). Writing them during capture gaps
+    /// keeps the transcoder's TCP connection alive without introducing backward
+    /// timestamps or PTS drift.
+    /// </summary>
+    private static byte[] BuildNullTsPackets(int count)
+    {
+        byte[] data = new byte[count * 188];
+        for (int i = 0; i < count; i++)
+        {
+            int offset = i * 188;
+            data[offset] = 0x47;     // sync byte
+            data[offset + 1] = 0x1F; // PID high bits (0x1FFF = null)
+            data[offset + 2] = 0xFF; // PID low bits
+            data[offset + 3] = 0x10; // adaptation = payload only, CC = 0
+            // remaining 184 bytes are 0x00 (padding)
+        }
+
+        return data;
     }
 }

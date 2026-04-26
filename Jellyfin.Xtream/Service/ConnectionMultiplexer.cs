@@ -227,8 +227,12 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     /// </summary>
     private async Task RoundRobinLoopAsync(CancellationToken ct)
     {
+        try
+        {
         while (!ct.IsCancellationRequested)
         {
+            try
+            {
             var activeChannels = _channels
                 .Where(kvp => kvp.Value.SubscriberCount > 0)
                 .Select(kvp => kvp.Value)
@@ -348,7 +352,28 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     }
                 }
             }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Round-robin loop iteration error, resuming in 2s");
+                await Task.Delay(2000, ct).ConfigureAwait(false);
+            }
         }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Normal shutdown
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Round-robin loop CRASHED — captures will not restart until plugin reload");
+        }
+
+        _logger.LogInformation("Round-robin loop exited");
     }
 
     /// <summary>
@@ -420,7 +445,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             Arguments = $"-fflags +nobuffer -analyzeduration 500000 -probesize 500000 "
                 + $"{userAgentArg}-i \"{url}\""
                 + " -map 0 -dn -sn -c copy"
-                + $" -f segment -segment_time {sliceSeconds} -segment_format mpegts"
+                + $" -f segment -segment_time {sliceSeconds} -break_non_keyframes 1 -segment_format mpegts"
                 + $" -segment_list \"{segListPath}\" -segment_list_type csv"
                 + $" -y \"{segPattern}\"",
             UseShellExecute = false,
@@ -569,8 +594,10 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     break;
                 }
 
-                // Update completedCount for segments we didn't process yet
-                completedCount = Math.Max(completedCount, safeCount);
+                // Do NOT advance completedCount past unprocessed segments.
+                // If a segment file was temporarily unreadable, the next poll
+                // will retry it. Only the for-loop above advances completedCount
+                // on successful processing (line: completedCount = i + 1).
 
                 // Periodic pruning
                 buffer.PruneSegments(retentionSeconds);
