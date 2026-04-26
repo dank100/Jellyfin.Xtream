@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Mime;
@@ -25,6 +26,7 @@ using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Client.Models;
 using Jellyfin.Xtream.Configuration;
 using Jellyfin.Xtream.Service;
+using MediaBrowser.Controller;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -38,7 +40,7 @@ namespace Jellyfin.Xtream.Api;
 [ApiController]
 [Route("[controller]")]
 [Produces(MediaTypeNames.Application.Json)]
-public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParser, RecordingEngine recordingEngine, ConnectionMultiplexer connectionMultiplexer) : ControllerBase
+public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParser, RecordingEngine recordingEngine, ConnectionMultiplexer connectionMultiplexer, IServerApplicationHost serverApplicationHost, ILogger<XtreamController> logger) : ControllerBase
 {
     /// <summary>
     /// MPEG-TS null packet (PID 0x1FFF). Decoders/demuxers ignore these.
@@ -556,6 +558,157 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
 
         recordingEngine.StartRecording(timer);
         return Ok(new { TimerId = timerId, StreamId = streamId, DurationMinutes = durationMinutes });
+    }
+
+    /// <summary>
+    /// Opens a multiplexed live restream, reads from it for the given duration,
+    /// and returns data-flow statistics (bytes, gaps, throughput).
+    /// Used by integration tests to verify the live restream pipeline.
+    /// </summary>
+    /// <param name="streamId">The Xtream stream ID.</param>
+    /// <param name="durationSeconds">How many seconds to read (default 30).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Statistics about the stream read.</returns>
+    [AllowAnonymous]
+    [HttpPost("Test/LiveStreamStats")]
+    public async Task<ActionResult<object>> TestLiveStreamStats(int streamId, int durationSeconds = 30, CancellationToken cancellationToken = default)
+    {
+        var restream = new MultiplexedRestream(
+            serverApplicationHost,
+            logger,
+            connectionMultiplexer,
+            streamId);
+
+        var openSw = Stopwatch.StartNew();
+        try
+        {
+            using var openCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            openCts.CancelAfter(TimeSpan.FromSeconds(60));
+            await restream.Open(openCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            restream.Dispose();
+            return Ok(new
+            {
+                StreamId = streamId,
+                Error = "Timed out waiting for stream to open (60s)",
+            });
+        }
+
+        double openLatencyMs = openSw.Elapsed.TotalMilliseconds;
+
+        using var stream = restream.GetStream();
+        var buf = new byte[65536];
+        long totalBytes = 0;
+        int readCount = 0;
+        double maxGapMs = 0;
+        double firstByteMs = 0;
+        int gapsOver500ms = 0;
+        int gapsOver1s = 0;
+        int gapsOver2s = 0;
+        int gapsOver5s = 0;
+        var gapList = new List<double>();
+        var sw = Stopwatch.StartNew();
+        var lastReadTime = sw.Elapsed;
+
+        using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        readCts.CancelAfter(TimeSpan.FromSeconds(durationSeconds + 10));
+
+        try
+        {
+            while (sw.Elapsed.TotalSeconds < durationSeconds)
+            {
+                int n = await stream.ReadAsync(buf, readCts.Token).ConfigureAwait(false);
+                if (n == 0)
+                {
+                    break;
+                }
+
+                var now = sw.Elapsed;
+                double gapMs = (now - lastReadTime).TotalMilliseconds;
+
+                if (readCount == 0)
+                {
+                    firstByteMs = now.TotalMilliseconds;
+                }
+
+                if (readCount > 0 && gapMs > 500)
+                {
+                    gapList.Add(gapMs);
+                    gapsOver500ms++;
+                    if (gapMs > 1000)
+                    {
+                        gapsOver1s++;
+                    }
+
+                    if (gapMs > 2000)
+                    {
+                        gapsOver2s++;
+                    }
+
+                    if (gapMs > 5000)
+                    {
+                        gapsOver5s++;
+                    }
+                }
+
+                if (gapMs > maxGapMs)
+                {
+                    maxGapMs = gapMs;
+                }
+
+                lastReadTime = now;
+                totalBytes += n;
+                readCount++;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        sw.Stop();
+
+        await restream.Close().ConfigureAwait(false);
+
+        double elapsedSec = sw.Elapsed.TotalSeconds;
+        double avgBytesPerSec = elapsedSec > 0 ? totalBytes / elapsedSec : 0;
+
+        // Compute P95 gap
+        gapList.Sort();
+        double p95GapMs = gapList.Count > 0 ? gapList[(int)(gapList.Count * 0.95)] : 0;
+
+        // Gap-fill stats from the restream
+        long gapFillCount = restream.GapFillCount;
+        long gapFillBytes = restream.GapFillBytes;
+        long freshBytes = restream.FreshBytes;
+        double replayPct = (freshBytes + gapFillBytes) > 0
+            ? 100.0 * gapFillBytes / (freshBytes + gapFillBytes)
+            : 0;
+
+        restream.Dispose();
+
+        return Ok(new
+        {
+            StreamId = streamId,
+            DurationRequestedSec = durationSeconds,
+            ElapsedSec = Math.Round(elapsedSec, 2),
+            TotalBytes = totalBytes,
+            ReadCount = readCount,
+            MaxGapMs = Math.Round(maxGapMs, 1),
+            P95GapMs = Math.Round(p95GapMs, 1),
+            AvgBytesPerSec = (long)avgBytesPerSec,
+            OpenLatencyMs = Math.Round(openLatencyMs, 0),
+            FirstByteMs = Math.Round(firstByteMs, 0),
+            GapsOver500ms = gapsOver500ms,
+            GapsOver1s = gapsOver1s,
+            GapsOver2s = gapsOver2s,
+            GapsOver5s = gapsOver5s,
+            GapFillReplays = gapFillCount,
+            GapFillBytes = gapFillBytes,
+            FreshBytes = freshBytes,
+            ReplayPct = Math.Round(replayPct, 1),
+        });
     }
 
     /// <summary>

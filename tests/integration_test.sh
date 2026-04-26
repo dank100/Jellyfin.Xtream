@@ -1008,6 +1008,242 @@ test_three_channel_staggered() {
     pass "Test 11 complete: three-channel staggered start works"
 }
 
+# ===== TEST 12: Live stream continuity — multiplexed restream sustains data flow =====
+# Tests the full live restream pipeline (capture → remuxer → WrappedBufferStream)
+# with 2 channels sharing 1 connection. Verifies:
+# - Both streams open within reasonable time
+# - Data flows continuously without long gaps (max gap < threshold)
+# - Sufficient throughput (bytes/sec) to sustain playback
+test_live_stream_continuity() {
+    log "=== Test 12: Live stream continuity — multiplexed restream under load ==="
+
+    local duration=60
+
+    # --- 12a: Two streams, tight thresholds, 60s ---
+    log "--- 12a: Two concurrent streams for ${duration}s with tight thresholds ---"
+
+    local tmp1 tmp2
+    tmp1=$(mktemp)
+    tmp2=$(mktemp)
+
+    curl -s -X POST "$API/Test/LiveStreamStats?streamId=$STREAM_101&durationSeconds=$duration" > "$tmp1" &
+    local pid1=$!
+    sleep 2
+    curl -s -X POST "$API/Test/LiveStreamStats?streamId=$STREAM_102&durationSeconds=$duration" > "$tmp2" &
+    local pid2=$!
+
+    log "Waiting for both live stream reads to complete (~${duration}s)..."
+    wait $pid1 2>/dev/null || true
+    wait $pid2 2>/dev/null || true
+
+    local result1 result2
+    result1=$(cat "$tmp1")
+    result2=$(cat "$tmp2")
+    rm -f "$tmp1" "$tmp2"
+
+    log "Stream $STREAM_101 result: $result1"
+    log "Stream $STREAM_102 result: $result2"
+
+    # Helper to extract JSON fields
+    _jval() { echo "$1" | python3 -c "import sys,json; print(json.load(sys.stdin).get('$2', '$3'))" 2>/dev/null || echo "$3"; }
+
+    # Check for errors
+    local err1 err2
+    err1=$(_jval "$result1" Error "")
+    err2=$(_jval "$result2" Error "")
+    if [ -n "$err1" ] && [ "$err1" != "" ]; then fail "Stream $STREAM_101 error: $err1"; return; fi
+    if [ -n "$err2" ] && [ "$err2" != "" ]; then fail "Stream $STREAM_102 error: $err2"; return; fi
+
+    # Extract all stats
+    local bytes1 bytes2 gap1 gap2 elapsed1 elapsed2 bps1 bps2
+    local p95_1 p95_2 gaps5s_1 gaps5s_2 gaps2s_1 gaps2s_2 gaps1s_1 gaps1s_2
+    local replay_pct1 replay_pct2 gapfill1 gapfill2 open1 open2
+
+    bytes1=$(_jval "$result1" TotalBytes 0)
+    bytes2=$(_jval "$result2" TotalBytes 0)
+    gap1=$(_jval "$result1" MaxGapMs 999999)
+    gap2=$(_jval "$result2" MaxGapMs 999999)
+    p95_1=$(_jval "$result1" P95GapMs 999999)
+    p95_2=$(_jval "$result2" P95GapMs 999999)
+    elapsed1=$(_jval "$result1" ElapsedSec 0)
+    elapsed2=$(_jval "$result2" ElapsedSec 0)
+    bps1=$(_jval "$result1" AvgBytesPerSec 0)
+    bps2=$(_jval "$result2" AvgBytesPerSec 0)
+    open1=$(_jval "$result1" OpenLatencyMs 0)
+    open2=$(_jval "$result2" OpenLatencyMs 0)
+    gaps5s_1=$(_jval "$result1" GapsOver5s 0)
+    gaps5s_2=$(_jval "$result2" GapsOver5s 0)
+    gaps2s_1=$(_jval "$result1" GapsOver2s 0)
+    gaps2s_2=$(_jval "$result2" GapsOver2s 0)
+    gaps1s_1=$(_jval "$result1" GapsOver1s 0)
+    gaps1s_2=$(_jval "$result2" GapsOver1s 0)
+    replay_pct1=$(_jval "$result1" ReplayPct 100)
+    replay_pct2=$(_jval "$result2" ReplayPct 100)
+    gapfill1=$(_jval "$result1" GapFillReplays 0)
+    gapfill2=$(_jval "$result2" GapFillReplays 0)
+
+    log "Stream $STREAM_101: ${bytes1}B, max gap ${gap1}ms, P95 ${p95_1}ms, gaps>2s: ${gaps2s_1}, replay: ${replay_pct1}%, gapfills: ${gapfill1}, open: ${open1}ms"
+    log "Stream $STREAM_102: ${bytes2}B, max gap ${gap2}ms, P95 ${p95_2}ms, gaps>2s: ${gaps2s_2}, replay: ${replay_pct2}%, gapfills: ${gapfill2}, open: ${open2}ms"
+
+    # Assertions — tight thresholds
+    local gap_threshold=4000
+    local gap1_int gap2_int
+    gap1_int=$(printf "%.0f" "$gap1" 2>/dev/null || echo 999999)
+    gap2_int=$(printf "%.0f" "$gap2" 2>/dev/null || echo 999999)
+
+    # Must have received data
+    [ "${bytes1:-0}" -gt 0 ] && pass "Stream $STREAM_101 received data (${bytes1} bytes)" || fail "Stream $STREAM_101 received no data"
+    [ "${bytes2:-0}" -gt 0 ] && pass "Stream $STREAM_102 received data (${bytes2} bytes)" || fail "Stream $STREAM_102 received no data"
+
+    # Max gap < 4s (gap-fill fires at 2s, so max should be ~3s)
+    [ "$gap1_int" -lt "$gap_threshold" ] && pass "Stream $STREAM_101 max gap OK (${gap1}ms < ${gap_threshold}ms)" || fail "Stream $STREAM_101 max gap too high (${gap1}ms >= ${gap_threshold}ms)"
+    [ "$gap2_int" -lt "$gap_threshold" ] && pass "Stream $STREAM_102 max gap OK (${gap2}ms < ${gap_threshold}ms)" || fail "Stream $STREAM_102 max gap too high (${gap2}ms >= ${gap_threshold}ms)"
+
+    # Zero gaps > 5s
+    [ "${gaps5s_1}" -eq 0 ] && pass "Stream $STREAM_101 no gaps > 5s" || fail "Stream $STREAM_101 has ${gaps5s_1} gaps > 5s"
+    [ "${gaps5s_2}" -eq 0 ] && pass "Stream $STREAM_102 no gaps > 5s" || fail "Stream $STREAM_102 has ${gaps5s_2} gaps > 5s"
+
+    # Throughput > 500KB/s
+    local bps_threshold=500000
+    [ "${bps1:-0}" -gt "$bps_threshold" ] && pass "Stream $STREAM_101 throughput OK (${bps1} B/s)" || fail "Stream $STREAM_101 throughput too low (${bps1} B/s < ${bps_threshold})"
+    [ "${bps2:-0}" -gt "$bps_threshold" ] && pass "Stream $STREAM_102 throughput OK (${bps2} B/s)" || fail "Stream $STREAM_102 throughput too low (${bps2} B/s < ${bps_threshold})"
+
+    # Replay percentage < 40% (if > 40%, viewer is mostly seeing repeats)
+    local replay1_int replay2_int
+    replay1_int=$(printf "%.0f" "$replay_pct1" 2>/dev/null || echo 100)
+    replay2_int=$(printf "%.0f" "$replay_pct2" 2>/dev/null || echo 100)
+    [ "$replay1_int" -lt 40 ] && pass "Stream $STREAM_101 replay ratio OK (${replay_pct1}% < 40%)" || fail "Stream $STREAM_101 too much replay (${replay_pct1}% >= 40%)"
+    [ "$replay2_int" -lt 40 ] && pass "Stream $STREAM_102 replay ratio OK (${replay_pct2}% < 40%)" || fail "Stream $STREAM_102 too much replay (${replay_pct2}% >= 40%)"
+
+    # Open latency < 30s
+    local open1_int open2_int
+    open1_int=$(printf "%.0f" "$open1" 2>/dev/null || echo 99999)
+    open2_int=$(printf "%.0f" "$open2" 2>/dev/null || echo 99999)
+    [ "$open1_int" -lt 30000 ] && pass "Stream $STREAM_101 open latency OK (${open1}ms)" || fail "Stream $STREAM_101 open too slow (${open1}ms)"
+    [ "$open2_int" -lt 30000 ] && pass "Stream $STREAM_102 open latency OK (${open2}ms)" || fail "Stream $STREAM_102 open too slow (${open2}ms)"
+
+    # Elapsed time close to requested
+    local elapsed1_int elapsed2_int min_elapsed
+    min_elapsed=$((duration * 3 / 4))
+    elapsed1_int=$(printf "%.0f" "$elapsed1" 2>/dev/null || echo 0)
+    elapsed2_int=$(printf "%.0f" "$elapsed2" 2>/dev/null || echo 0)
+    [ "$elapsed1_int" -ge "$min_elapsed" ] && pass "Stream $STREAM_101 ran ${elapsed1}s (>= ${min_elapsed}s)" || fail "Stream $STREAM_101 ran only ${elapsed1}s"
+    [ "$elapsed2_int" -ge "$min_elapsed" ] && pass "Stream $STREAM_102 ran ${elapsed2}s (>= ${min_elapsed}s)" || fail "Stream $STREAM_102 ran only ${elapsed2}s"
+
+    pass "Test 12a complete: tight thresholds"
+
+    # Cleanup between sub-tests
+    drain_all_recordings
+    sleep 5
+
+    # --- 12b: Three concurrent streams stress test (60s) ---
+    log "--- 12b: Three concurrent streams stress test for ${duration}s ---"
+
+    local tmp3
+    tmp1=$(mktemp)
+    tmp2=$(mktemp)
+    tmp3=$(mktemp)
+
+    curl -s -X POST "$API/Test/LiveStreamStats?streamId=$STREAM_101&durationSeconds=$duration" > "$tmp1" &
+    pid1=$!
+    sleep 2
+    curl -s -X POST "$API/Test/LiveStreamStats?streamId=$STREAM_102&durationSeconds=$duration" > "$tmp2" &
+    pid2=$!
+    sleep 2
+    curl -s -X POST "$API/Test/LiveStreamStats?streamId=$STREAM_103&durationSeconds=$duration" > "$tmp3" &
+    local pid3=$!
+
+    log "Waiting for 3 live stream reads to complete (~${duration}s)..."
+    wait $pid1 2>/dev/null || true
+    wait $pid2 2>/dev/null || true
+    wait $pid3 2>/dev/null || true
+
+    result1=$(cat "$tmp1")
+    result2=$(cat "$tmp2")
+    local result3
+    result3=$(cat "$tmp3")
+    rm -f "$tmp1" "$tmp2" "$tmp3"
+
+    log "3-stream $STREAM_101: $result1"
+    log "3-stream $STREAM_102: $result2"
+    log "3-stream $STREAM_103: $result3"
+
+    # Extract stats for all 3
+    local bytes3 gap3 bps3 replay_pct3 elapsed3 gaps5s_3
+    bytes1=$(_jval "$result1" TotalBytes 0)
+    bytes2=$(_jval "$result2" TotalBytes 0)
+    bytes3=$(_jval "$result3" TotalBytes 0)
+    gap1=$(_jval "$result1" MaxGapMs 999999)
+    gap2=$(_jval "$result2" MaxGapMs 999999)
+    gap3=$(_jval "$result3" MaxGapMs 999999)
+    bps1=$(_jval "$result1" AvgBytesPerSec 0)
+    bps2=$(_jval "$result2" AvgBytesPerSec 0)
+    bps3=$(_jval "$result3" AvgBytesPerSec 0)
+    replay_pct1=$(_jval "$result1" ReplayPct 100)
+    replay_pct2=$(_jval "$result2" ReplayPct 100)
+    replay_pct3=$(_jval "$result3" ReplayPct 100)
+    elapsed1=$(_jval "$result1" ElapsedSec 0)
+    elapsed2=$(_jval "$result2" ElapsedSec 0)
+    elapsed3=$(_jval "$result3" ElapsedSec 0)
+    gaps5s_1=$(_jval "$result1" GapsOver5s 0)
+    gaps5s_2=$(_jval "$result2" GapsOver5s 0)
+    gaps5s_3=$(_jval "$result3" GapsOver5s 0)
+
+    log "3-stream $STREAM_101: ${bytes1}B, max gap ${gap1}ms, replay ${replay_pct1}%, ${bps1} B/s"
+    log "3-stream $STREAM_102: ${bytes2}B, max gap ${gap2}ms, replay ${replay_pct2}%, ${bps2} B/s"
+    log "3-stream $STREAM_103: ${bytes3}B, max gap ${gap3}ms, replay ${replay_pct3}%, ${bps3} B/s"
+
+    # 3-stream thresholds (more relaxed — longer round-robin cycle)
+    local gap_threshold_3=6000
+    gap1_int=$(printf "%.0f" "$gap1" 2>/dev/null || echo 999999)
+    gap2_int=$(printf "%.0f" "$gap2" 2>/dev/null || echo 999999)
+    local gap3_int
+    gap3_int=$(printf "%.0f" "$gap3" 2>/dev/null || echo 999999)
+
+    # All 3 must receive data
+    [ "${bytes1:-0}" -gt 0 ] && pass "3-stream $STREAM_101 received data" || fail "3-stream $STREAM_101 no data"
+    [ "${bytes2:-0}" -gt 0 ] && pass "3-stream $STREAM_102 received data" || fail "3-stream $STREAM_102 no data"
+    [ "${bytes3:-0}" -gt 0 ] && pass "3-stream $STREAM_103 received data" || fail "3-stream $STREAM_103 no data"
+
+    # Max gap < 6s for 3 streams
+    [ "$gap1_int" -lt "$gap_threshold_3" ] && pass "3-stream $STREAM_101 gap OK (${gap1}ms)" || fail "3-stream $STREAM_101 gap too high (${gap1}ms)"
+    [ "$gap2_int" -lt "$gap_threshold_3" ] && pass "3-stream $STREAM_102 gap OK (${gap2}ms)" || fail "3-stream $STREAM_102 gap too high (${gap2}ms)"
+    [ "$gap3_int" -lt "$gap_threshold_3" ] && pass "3-stream $STREAM_103 gap OK (${gap3}ms)" || fail "3-stream $STREAM_103 gap too high (${gap3}ms)"
+
+    # Zero gaps > 5s
+    [ "${gaps5s_1}" -eq 0 ] && pass "3-stream $STREAM_101 no gaps > 5s" || fail "3-stream $STREAM_101 has ${gaps5s_1} gaps > 5s"
+    [ "${gaps5s_2}" -eq 0 ] && pass "3-stream $STREAM_102 no gaps > 5s" || fail "3-stream $STREAM_102 has ${gaps5s_2} gaps > 5s"
+    [ "${gaps5s_3}" -eq 0 ] && pass "3-stream $STREAM_103 no gaps > 5s" || fail "3-stream $STREAM_103 has ${gaps5s_3} gaps > 5s"
+
+    # Throughput > 300KB/s for 3 streams
+    local bps_threshold_3=300000
+    [ "${bps1:-0}" -gt "$bps_threshold_3" ] && pass "3-stream $STREAM_101 throughput OK (${bps1})" || fail "3-stream $STREAM_101 throughput low (${bps1})"
+    [ "${bps2:-0}" -gt "$bps_threshold_3" ] && pass "3-stream $STREAM_102 throughput OK (${bps2})" || fail "3-stream $STREAM_102 throughput low (${bps2})"
+    [ "${bps3:-0}" -gt "$bps_threshold_3" ] && pass "3-stream $STREAM_103 throughput OK (${bps3})" || fail "3-stream $STREAM_103 throughput low (${bps3})"
+
+    # Replay < 50% for 3 streams (higher threshold — more time off each channel)
+    replay1_int=$(printf "%.0f" "$replay_pct1" 2>/dev/null || echo 100)
+    replay2_int=$(printf "%.0f" "$replay_pct2" 2>/dev/null || echo 100)
+    local replay3_int
+    replay3_int=$(printf "%.0f" "$replay_pct3" 2>/dev/null || echo 100)
+    [ "$replay1_int" -lt 50 ] && pass "3-stream $STREAM_101 replay OK (${replay_pct1}%)" || fail "3-stream $STREAM_101 too much replay (${replay_pct1}%)"
+    [ "$replay2_int" -lt 50 ] && pass "3-stream $STREAM_102 replay OK (${replay_pct2}%)" || fail "3-stream $STREAM_102 too much replay (${replay_pct2}%)"
+    [ "$replay3_int" -lt 50 ] && pass "3-stream $STREAM_103 replay OK (${replay_pct3}%)" || fail "3-stream $STREAM_103 too much replay (${replay_pct3}%)"
+
+    # All 3 ran for at least 75% of requested duration
+    elapsed1_int=$(printf "%.0f" "$elapsed1" 2>/dev/null || echo 0)
+    elapsed2_int=$(printf "%.0f" "$elapsed2" 2>/dev/null || echo 0)
+    local elapsed3_int
+    elapsed3_int=$(printf "%.0f" "$elapsed3" 2>/dev/null || echo 0)
+    [ "$elapsed1_int" -ge "$min_elapsed" ] && pass "3-stream $STREAM_101 ran ${elapsed1}s" || fail "3-stream $STREAM_101 only ${elapsed1}s"
+    [ "$elapsed2_int" -ge "$min_elapsed" ] && pass "3-stream $STREAM_102 ran ${elapsed2}s" || fail "3-stream $STREAM_102 only ${elapsed2}s"
+    [ "$elapsed3_int" -ge "$min_elapsed" ] && pass "3-stream $STREAM_103 ran ${elapsed3}s" || fail "3-stream $STREAM_103 only ${elapsed3}s"
+
+    pass "Test 12b complete: three-stream stress test"
+
+    pass "Test 12 complete: live stream continuity"
+}
+
 # ===== MAIN =====
 log "Starting integration tests"
 log "Base URL: $BASE_URL"
@@ -1054,6 +1290,10 @@ test_three_channel_fairness
 echo ""
 drain_all_recordings
 test_three_channel_staggered
+echo ""
+# Ensure clean state before live stream test
+drain_all_recordings
+test_live_stream_continuity
 echo ""
 
 log "============================="

@@ -306,11 +306,23 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             }
             else
             {
-                // More channels than connections — stop any parallel captures
-                // and fall back to sequential round-robin with fair scheduling.
+                // More channels than connections — transition to sequential round-robin.
+                // Stop parallel captures gracefully (they'll finish current work).
                 StopAllParallelCaptures();
 
-                foreach (var buffer in activeChannels)
+                // Wait briefly for parallel captures to wind down and produce
+                // their last segments, minimizing the transition gap.
+                await Task.Delay(500, ct).ConfigureAwait(false);
+
+                // Prioritize channels with the oldest data (fewest recent segments).
+                // This ensures newly-joined channels get data first during the
+                // parallel→sequential transition, minimizing their startup gap.
+                var orderedChannels = activeChannels
+                    .OrderBy(b => b.GetSegments().Count)
+                    .ThenByDescending(b => b.StreamId)
+                    .ToList();
+
+                foreach (var buffer in orderedChannels)
                 {
                     if (ct.IsCancellationRequested)
                     {
@@ -332,7 +344,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Error in continuous capture for stream {StreamId}", buffer.StreamId);
-                        await Task.Delay(2000, ct).ConfigureAwait(false);
+                        await Task.Delay(1000, ct).ConfigureAwait(false);
                     }
                 }
             }
@@ -405,7 +417,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = $"-fflags +nobuffer -analyzeduration 1000000 -probesize 1000000 "
+            Arguments = $"-fflags +nobuffer -analyzeduration 500000 -probesize 500000 "
                 + $"{userAgentArg}-i \"{url}\""
                 + " -map 0 -dn -sn -c copy"
                 + $" -f segment -segment_time {sliceSeconds} -segment_format mpegts"
@@ -499,16 +511,16 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 }
 
                 // Process newly completed segments.
-                // Only process segment N when N+1 exists in the list,
-                // confirming N is fully written (the list entry for N+1
-                // means ffmpeg has moved on to writing the next segment).
-                int safeCount = Math.Max(0, newCount - 1);
+                // ffmpeg's segment list CSV writes each line when the segment is
+                // finalized, so all listed segments are safe to process.
+                // The file existence + size check below guards against edge cases.
+                int safeCount = newCount;
                 bool shouldYield = false;
 
                 // Pre-compute yield parameters once per poll cycle.
                 int activeCount = _channels.Count(kvp => kvp.Value.SubscriberCount > 0);
                 bool needsYield = activeCount > _maxConnections;
-                const int minSegments = 4;
+                const int minSegments = 3;
 
                 for (int i = completedCount; i < safeCount; i++)
                 {
@@ -563,13 +575,13 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 // Periodic pruning
                 buffer.PruneSegments(retentionSeconds);
 
-                await Task.Delay(200, ct).ConfigureAwait(false);
+                await Task.Delay(100, ct).ConfigureAwait(false);
             }
 
-            // When ffmpeg exits via yield/cancel, the loop exits before
-            // the last segment is processed (N+1 safety rule). Final segment
-            // processing is deferred to after WaitForExitAsync in the finally
-            // block to ensure ffmpeg has finished writing.
+            // When ffmpeg exits via yield/cancel, the loop may exit before
+            // the last segment is processed. Final segment processing is
+            // deferred to after WaitForExitAsync to ensure ffmpeg has
+            // finished writing.
         }
         catch (OperationCanceledException)
         {

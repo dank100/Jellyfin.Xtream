@@ -47,6 +47,9 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     private readonly CancellationTokenSource _cts;
     private Task? _pumpTask;
     private bool _disposed;
+    private long _gapFillCount;
+    private long _gapFillBytes;
+    private long _freshBytes;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MultiplexedRestream"/> class.
@@ -60,7 +63,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         _logger = logger;
         _multiplexer = multiplexer;
         _streamId = streamId;
-        _buffer = new WrappedBufferStream(16 * 1024 * 1024);
+        _buffer = new WrappedBufferStream(32 * 1024 * 1024);
         _cts = new CancellationTokenSource();
 
         UniqueId = Guid.NewGuid().ToString();
@@ -96,6 +99,15 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     /// <inheritdoc />
     public bool EnableStreamSharing => true;
 
+    /// <summary>Gets the number of gap-fill replay events.</summary>
+    public long GapFillCount => Interlocked.Read(ref _gapFillCount);
+
+    /// <summary>Gets the total bytes written by gap-fill replays.</summary>
+    public long GapFillBytes => Interlocked.Read(ref _gapFillBytes);
+
+    /// <summary>Gets the total bytes written from fresh (non-replay) segments.</summary>
+    public long FreshBytes => Interlocked.Read(ref _freshBytes);
+
     /// <inheritdoc />
     public MediaSourceInfo MediaSource { get; set; }
 
@@ -108,8 +120,8 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         _logger.LogInformation("Opening multiplexed stream for channel {StreamId}", _streamId);
         var buffer = _multiplexer.Subscribe(_streamId, isLive: true);
 
-        // Wait for enough segments so prebuffer can survive the round-robin gap.
-        const int minSegments = 5;
+        // Wait for enough segments to fill buffer sufficiently before playback.
+        const int minSegments = 3;
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (buffer.GetSegments().Count < minSegments && DateTime.UtcNow < deadline)
         {
@@ -258,6 +270,16 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
         long totalWritten = 0;
         int segmentsWritten = 0;
+        byte[]? cachedSegmentData = null;
+        var lastWriteTime = DateTime.UtcNow;
+        const int gapFillThresholdMs = 1500;
+        // Replay 40% of cached segment — balanced between keeping the remuxer
+        // producing output and minimizing replay bytes.
+        const double replayFraction = 0.40;
+        // Pace replay with frequent interrupt checks (20 chunks × 50ms = 1s).
+        const int paceChunks = 20;
+        const int paceDelayMs = 50;
+
         try
         {
             while (!ct.IsCancellationRequested)
@@ -290,6 +312,9 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                         segmentsWritten++;
                         lastSegmentIndex = globalIndex;
                         wroteAny = true;
+                        cachedSegmentData = data;
+                        lastWriteTime = DateTime.UtcNow;
+                        Interlocked.Add(ref _freshBytes, data.Length);
 
                         _logger.LogInformation(
                             "Pump for channel {StreamId}: wrote segment {Filename} ({Bytes} bytes), total: {Segs} segments, {Total} bytes",
@@ -313,7 +338,73 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
                 if (!wroteAny)
                 {
-                    await Task.Delay(100, ct).ConfigureAwait(false);
+                    double msSinceWrite = (DateTime.UtcNow - lastWriteTime).TotalMilliseconds;
+                    if (cachedSegmentData != null && msSinceWrite >= gapFillThresholdMs)
+                    {
+                        // Replay a small portion of cached segment, paced and interruptible.
+                        // Between each chunk, check if fresh segments arrived — if so, stop
+                        // replaying immediately to minimize replay content.
+                        try
+                        {
+                            int replayLen = Math.Max(1, (int)(cachedSegmentData.Length * replayFraction));
+                            int chunkSize = Math.Max(1, replayLen / paceChunks);
+                            int written = 0;
+
+                            for (int offset = 0; offset < replayLen && !ct.IsCancellationRequested; offset += chunkSize)
+                            {
+                                // Check for fresh segments before each chunk — abort replay early.
+                                var freshSegs = channelBuffer.GetSegments();
+                                bool hasFresh = false;
+                                for (int fi = 0; fi < freshSegs.Count; fi++)
+                                {
+                                    if (channelBuffer.GetGlobalIndex(fi) > lastSegmentIndex)
+                                    {
+                                        hasFresh = true;
+                                        break;
+                                    }
+                                }
+
+                                if (hasFresh)
+                                {
+                                    _logger.LogDebug(
+                                        "Gap-fill for channel {StreamId}: aborting replay — fresh segment available ({Written} bytes written)",
+                                        _streamId,
+                                        written);
+                                    break;
+                                }
+
+                                int len = Math.Min(chunkSize, replayLen - offset);
+                                await ffmpeg.StandardInput.BaseStream.WriteAsync(
+                                    cachedSegmentData.AsMemory(offset, len), ct).ConfigureAwait(false);
+                                written += len;
+                                await Task.Delay(paceDelayMs, ct).ConfigureAwait(false);
+                            }
+
+                            if (written > 0)
+                            {
+                                await ffmpeg.StandardInput.BaseStream.FlushAsync(ct).ConfigureAwait(false);
+                                totalWritten += written;
+                                lastWriteTime = DateTime.UtcNow;
+                                Interlocked.Increment(ref _gapFillCount);
+                                Interlocked.Add(ref _gapFillBytes, written);
+
+                                _logger.LogDebug(
+                                    "Pump for channel {StreamId}: replayed {Bytes} bytes (of {Total}) to fill gap",
+                                    _streamId,
+                                    written,
+                                    cachedSegmentData.Length);
+                            }
+                        }
+                        catch (IOException)
+                        {
+                            _logger.LogWarning("Gap-fill write failed for channel {StreamId}, remuxer may have exited", _streamId);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay(50, ct).ConfigureAwait(false);
+                    }
                 }
             }
         }
