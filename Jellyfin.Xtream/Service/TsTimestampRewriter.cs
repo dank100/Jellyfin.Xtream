@@ -37,7 +37,6 @@ internal sealed class TsTimestampRewriter
     // Per-PID continuity counter tracking for seamless segment concatenation.
     private readonly Dictionary<int, int> _ccCounters = new();
 
-    private readonly DateTime _streamStartTime = DateTime.UtcNow;
     private long _lastPts = -1;
     private long _adjustment;
 
@@ -69,11 +68,10 @@ internal sealed class TsTimestampRewriter
             long expectedDelta = WrapDiff(firstPts + _adjustment, _lastPts);
             if (expectedDelta < -BackwardThreshold || expectedDelta > ForwardThreshold)
             {
-                // Discontinuity: map new content to wall-clock time to prevent
-                // PTS drift from burst reads. Use wall-clock as the target, but
-                // never go backward past _lastPts.
-                long wallTicks = (long)((DateTime.UtcNow - _streamStartTime).TotalSeconds * 90000);
-                long target = Math.Max(wallTicks, _lastPts + 1);
+                // Discontinuity: map new content to _lastPts + 1 so output PTS
+                // remains strictly monotonic without large gaps. Wall-clock based
+                // targets caused PTS jumps that crashed the HLS transcoder/player.
+                long target = _lastPts + 1;
                 _adjustment = WrapDiff(target, firstPts);
             }
         }

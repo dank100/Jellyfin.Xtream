@@ -549,7 +549,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 bool needsYield = activeCount > _maxConnections;
                 const int minFreshSegments = 2;
                 // Wall-clock safety: don't capture forever even if no fresh content arrives.
-                const double maxCaptureSeconds = 15.0;
+                const double maxCaptureSeconds = 8.0;
 
                 for (int i = completedCount; i < safeCount; i++)
                 {

@@ -273,20 +273,17 @@ public class TsTimestampRewriterTests
             afterBurst = lastPts;
         }
 
-        // After 10 cycles: 100s of content PTS in near-zero wall time.
-        // With wall-clock-based adjustment, the output PTS should stay
-        // near wall-clock time (close to 0), not grow to 100s+.
-        // Since tests run in <1ms, wall-clock target ≈ 0, so adjustment
-        // keeps PTS near _lastPts + 1 (not _lastPts + contentDuration).
-        // The key check: adjustment growth per cycle should be bounded
-        // (roughly content duration, not accumulating extra).
+        // After 10 cycles: each cycle adds ~10s of content to the output.
+        // With _lastPts + 1 based adjustment, output PTS grows by content
+        // duration per cycle (~10s × 10 = ~100s + initial 10s = ~110s).
+        // This is expected and the transcoder handles it well since PTS
+        // is strictly monotonic without large jumps.
         long finalAdj = rewriter.Adjustment;
         long finalPts = rewriter.LastOutputPts;
 
-        // Final PTS should be reasonable — well under 200s (which would
-        // happen with ~10s drift per cycle × 10 cycles + content).
+        // Final PTS should be reasonable — well under 200s.
         Assert.True(finalPts < 200 * TicksPerSecond,
-            $"Final PTS ({finalPts / (double)TicksPerSecond:F1}s) should be < 200s (drift prevention)");
+            $"Final PTS ({finalPts / (double)TicksPerSecond:F1}s) should be < 200s");
     }
 
     // --- Double-adjustment / production gap-fill scenario ---
