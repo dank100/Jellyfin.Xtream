@@ -107,7 +107,15 @@ internal sealed class TsTimestampRewriter
         return adjusted;
     }
 
-    private static long WrapDiff(long a, long b)
+    /// <summary>
+    /// Computes the signed difference (a - b) with 33-bit PTS wrap handling.
+    /// Positive means a is ahead of b; negative means a is behind.
+    /// Exposed for wrap-safe duplicate detection in the pump.
+    /// </summary>
+    /// <param name="a">First PTS value.</param>
+    /// <param name="b">Second PTS value.</param>
+    /// <returns>Signed difference accounting for 33-bit PTS wrap.</returns>
+    internal static long WrapDiff(long a, long b)
     {
         long diff = Wrap(a) - Wrap(b);
         if (diff > PtsWrap / 2)
