@@ -513,4 +513,113 @@ public class TsTimestampRewriterTests
         Assert.True(lastPts2 > maxRawPts,
             $"Partially overlapping segment with new tail ({lastPts2}) should be > maxRawPts ({maxRawPts})");
     }
+
+    /// <summary>
+    /// Simulates the ring-buffer wrap scenario that caused stream crashes:
+    /// after maxRawPtsSeen covers the entire PTS range of a wrapping source,
+    /// every segment appears "duplicate" and the pump starves the transcoder.
+    /// The anti-starvation logic should reset after maxConsecutiveSkips.
+    /// </summary>
+    [Fact]
+    public void RingBufferWrap_AntiStarvation_ResetsAfterConsecutiveSkips()
+    {
+        // Simulate a 30s source clip with PTS 0 → 2_700_000 (30s × 90kHz).
+        // Captures cycle through the clip, building maxRawPtsSeen up to the max.
+        // After the clip wraps, all new segments have lower PTS → all "duplicate".
+        const long clipEnd = 2_700_000;
+        const int maxConsecutiveSkips = 8;
+
+        long maxRawPtsSeen = -1;
+        int consecutiveSkips = 0;
+        int segmentsDelivered = 0;
+        int segmentsSkipped = 0;
+
+        // Phase 1: First pass through the clip — all fresh, builds maxRawPtsSeen.
+        for (long pts = 0; pts < clipEnd; pts += 180_000) // 2s segments
+        {
+            var seg = TsPacketBuilder.BuildSegment(new[] { pts, pts + 90_000 });
+            long rawLastPts = TsTimestampRewriter.ReadLastPts(seg);
+
+            bool isDuplicate = false;
+            if (rawLastPts >= 0 && maxRawPtsSeen >= 0)
+            {
+                isDuplicate = TsTimestampRewriter.WrapDiff(rawLastPts, maxRawPtsSeen) <= 0;
+            }
+
+            // Anti-starvation check
+            if (isDuplicate && consecutiveSkips >= maxConsecutiveSkips)
+            {
+                maxRawPtsSeen = -1;
+                isDuplicate = false;
+                consecutiveSkips = 0;
+            }
+
+            if (rawLastPts >= 0 && (maxRawPtsSeen < 0 || TsTimestampRewriter.WrapDiff(rawLastPts, maxRawPtsSeen) > 0))
+            {
+                maxRawPtsSeen = rawLastPts;
+            }
+
+            if (isDuplicate)
+            {
+                consecutiveSkips++;
+                segmentsSkipped++;
+            }
+            else
+            {
+                consecutiveSkips = 0;
+                segmentsDelivered++;
+            }
+        }
+
+        // After phase 1: all segments delivered, maxRawPtsSeen near clipEnd.
+        Assert.True(segmentsDelivered >= 14, $"Phase 1: expected all ~15 segments delivered, got {segmentsDelivered}");
+        Assert.Equal(0, segmentsSkipped);
+
+        // Phase 2: Clip wraps — replay from the beginning.
+        // These segments have PTS lower than maxRawPtsSeen → detected as duplicates.
+        // After maxConsecutiveSkips, anti-starvation kicks in.
+        int phase2Delivered = 0;
+        int phase2Skipped = 0;
+        for (long pts = 0; pts < clipEnd; pts += 180_000)
+        {
+            var seg = TsPacketBuilder.BuildSegment(new[] { pts, pts + 90_000 });
+            long rawLastPts = TsTimestampRewriter.ReadLastPts(seg);
+
+            bool isDuplicate = false;
+            if (rawLastPts >= 0 && maxRawPtsSeen >= 0)
+            {
+                isDuplicate = TsTimestampRewriter.WrapDiff(rawLastPts, maxRawPtsSeen) <= 0;
+            }
+
+            if (isDuplicate && consecutiveSkips >= maxConsecutiveSkips)
+            {
+                maxRawPtsSeen = -1;
+                isDuplicate = false;
+                consecutiveSkips = 0;
+            }
+
+            if (rawLastPts >= 0 && (maxRawPtsSeen < 0 || TsTimestampRewriter.WrapDiff(rawLastPts, maxRawPtsSeen) > 0))
+            {
+                maxRawPtsSeen = rawLastPts;
+            }
+
+            if (isDuplicate)
+            {
+                consecutiveSkips++;
+                phase2Skipped++;
+            }
+            else
+            {
+                consecutiveSkips = 0;
+                phase2Delivered++;
+            }
+        }
+
+        // Anti-starvation should have fired: some segments skipped, but NOT all.
+        Assert.True(phase2Skipped > 0, "Phase 2: should have skipped some duplicate segments");
+        Assert.True(phase2Delivered > 0,
+            $"Phase 2: anti-starvation should have delivered segments after {maxConsecutiveSkips} skips, but delivered {phase2Delivered}");
+        Assert.True(phase2Skipped <= maxConsecutiveSkips + 1,
+            $"Phase 2: should skip at most {maxConsecutiveSkips}+1 before reset, got {phase2Skipped}");
+    }
 }

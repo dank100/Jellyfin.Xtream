@@ -213,6 +213,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         // When the IPTV server replays its ring buffer on reconnect, the raw PTS
         // range will overlap with what we've already seen.
         long maxRawPtsSeen = -1;
+        int consecutiveSkips = 0;
 
         long totalWritten = 0;
         int segmentsWritten = 0;
@@ -268,6 +269,25 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                             isDuplicate = diff <= 0;
                         }
 
+                        // Anti-starvation: if we've skipped too many consecutive segments,
+                        // the source PTS has likely wrapped (ring buffer recycled). Reset
+                        // the tracker so we accept content again — repeated footage is better
+                        // than a dead stream.
+                        const int maxConsecutiveSkips = 8;
+                        if (isDuplicate && consecutiveSkips >= maxConsecutiveSkips)
+                        {
+                            _logger.LogWarning(
+                                "Pump for channel {StreamId}: anti-starvation reset after {Skips} consecutive skips (rawLast={RawLast}, maxSeen={MaxSeen})",
+                                _streamId,
+                                consecutiveSkips,
+                                rawLastPts,
+                                maxRawPtsSeen);
+                            maxRawPtsSeen = -1;
+                            channelBuffer.MaxRawPtsSeen = -1;
+                            isDuplicate = false;
+                            consecutiveSkips = 0;
+                        }
+
                         if (rawLastPts >= 0 && (maxRawPtsSeen < 0 || TsTimestampRewriter.WrapDiff(rawLastPts, maxRawPtsSeen) > 0))
                         {
                             maxRawPtsSeen = rawLastPts;
@@ -276,20 +296,24 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
                         if (isDuplicate)
                         {
+                            consecutiveSkips++;
                             Interlocked.Increment(ref _duplicateSegments);
                             Interlocked.Add(ref _duplicateBytes, data.Length);
                             lastSegmentIndex = globalIndex;
 
                             _logger.LogInformation(
-                                "Pump for channel {StreamId}: SKIPPED duplicate segment {Filename} ({Bytes} bytes, rawFirst={RawFirst}, rawLast={RawLast}, maxSeen={MaxSeen})",
+                                "Pump for channel {StreamId}: SKIPPED duplicate segment {Filename} ({Bytes} bytes, rawFirst={RawFirst}, rawLast={RawLast}, maxSeen={MaxSeen}, consSkips={ConsSkips})",
                                 _streamId,
                                 seg.Filename,
                                 data.Length,
                                 rawFirstPts,
                                 rawLastPts,
-                                maxRawPtsSeen);
+                                maxRawPtsSeen,
+                                consecutiveSkips);
                             continue;
                         }
+
+                        consecutiveSkips = 0;
 
                         tsRewriter.Rewrite(data);
                         await _buffer.WriteAsync(data, ct).ConfigureAwait(false);
