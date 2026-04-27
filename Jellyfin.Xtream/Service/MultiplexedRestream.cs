@@ -49,7 +49,6 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     private bool _disposed;
     private long _gapFillCount;
     private long _gapFillBytes;
-    private long _replayBytes;
     private long _freshBytes;
     private long _duplicateSegments;
     private long _duplicateBytes;
@@ -103,14 +102,11 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     /// <inheritdoc />
     public bool EnableStreamSharing => true;
 
-    /// <summary>Gets the number of gap-fill events (replay + null packets).</summary>
+    /// <summary>Gets the number of gap-fill events.</summary>
     public long GapFillCount => Interlocked.Read(ref _gapFillCount);
 
-    /// <summary>Gets the total bytes written by gap-fill (replay + null packets).</summary>
+    /// <summary>Gets the total bytes written by gap-fill null packets.</summary>
     public long GapFillBytes => Interlocked.Read(ref _gapFillBytes);
-
-    /// <summary>Gets the total bytes written by segment replay gap-fills only.</summary>
-    public long ReplayBytes => Interlocked.Read(ref _replayBytes);
 
     /// <summary>Gets the total bytes written from fresh (non-replay) segments.</summary>
     public long FreshBytes => Interlocked.Read(ref _freshBytes);
@@ -223,16 +219,12 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         int segmentsWritten = 0;
         var lastWriteTime = DateTime.UtcNow;
 
-        // Gap-fill: replay the last raw segment through the rewriter to keep the
-        // transcoder fed with valid video/audio data during capture gaps. The
-        // rewriter gives it continuous PTS (via _lastPts + 1 discontinuity target).
-        // This prevents the transcoder from starving on prolonged gaps.
-        // Falls back to null TS packets (PID 0x1FFF) before any segment is cached.
+        // Gap-fill: null TS packets (PID 0x1FFF) keep the transcoder's TCP
+        // connection alive during capture gaps. No segment replay to avoid
+        // visible content loops for viewers.
         const int gapFillThresholdMs = 2000;
         const int nullPacketCount = 100; // 100 × 188 = 18.8 KB per gap-fill write
         byte[] nullTsPackets = BuildNullTsPackets(nullPacketCount);
-        byte[]? lastRawSegment = null; // cached PRE-rewrite data for gap-fill replay
-        int consecutiveGapFills = 0; // reset when real content arrives
 
         try
         {
@@ -323,9 +315,6 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
                         consecutiveSkips = 0;
 
-                        // Cache raw data BEFORE rewriting for gap-fill replay.
-                        lastRawSegment = (byte[])data.Clone();
-
                         tsRewriter.Rewrite(data);
                         await _buffer.WriteAsync(data, ct).ConfigureAwait(false);
                         totalWritten += data.Length;
@@ -333,7 +322,6 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                         lastSegmentIndex = globalIndex;
                         wroteAny = true;
                         lastWriteTime = DateTime.UtcNow;
-                        consecutiveGapFills = 0;
                         Interlocked.Add(ref _freshBytes, data.Length);
 
                         _logger.LogInformation(
@@ -379,39 +367,12 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
                         if (!hasFresh)
                         {
-                            // Gap-fill strategy:
-                            // 1. Replay cached segment (real video) if replay budget allows
-                            // 2. Fall back to null TS packets (PID 0x1FFF)
-                            //
-                            // Budget: replay bytes must stay < 20% of total output.
-                            // This prevents constant visible replay while still keeping
-                            // the transcoder alive during initial gaps. Also require this
-                            // to be the first gap-fill since last real content (prevents
-                            // replaying more than once per gap).
-                            const int maxReplayPctTarget = 20;
-                            long curReplay = Interlocked.Read(ref _replayBytes);
-                            long curFresh = Interlocked.Read(ref _freshBytes);
-                            long totalOutput = curReplay + curFresh;
-                            bool withinBudget = totalOutput == 0 || (curReplay * 100 / totalOutput) < maxReplayPctTarget;
-                            bool isFirstFillInGap = consecutiveGapFills == 0;
-
-                            consecutiveGapFills++;
-
-                            if (lastRawSegment != null && withinBudget && isFirstFillInGap)
-                            {
-                                byte[] gapFillData = (byte[])lastRawSegment.Clone();
-                                tsRewriter.Rewrite(gapFillData);
-                                await _buffer.WriteAsync(gapFillData, ct).ConfigureAwait(false);
-                                totalWritten += gapFillData.Length;
-                                Interlocked.Add(ref _gapFillBytes, gapFillData.Length);
-                                Interlocked.Add(ref _replayBytes, gapFillData.Length);
-                            }
-                            else
-                            {
-                                await _buffer.WriteAsync(nullTsPackets, ct).ConfigureAwait(false);
-                                totalWritten += nullTsPackets.Length;
-                                Interlocked.Add(ref _gapFillBytes, nullTsPackets.Length);
-                            }
+                            // Gap-fill: null TS packets (PID 0x1FFF) keep the TCP
+                            // connection alive during capture gaps. No segment replay
+                            // — replays cause visible content loops for viewers.
+                            await _buffer.WriteAsync(nullTsPackets, ct).ConfigureAwait(false);
+                            totalWritten += nullTsPackets.Length;
+                            Interlocked.Add(ref _gapFillBytes, nullTsPackets.Length);
 
                             lastWriteTime = DateTime.UtcNow;
                             Interlocked.Increment(ref _gapFillCount);

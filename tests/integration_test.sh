@@ -1115,13 +1115,12 @@ test_live_stream_continuity() {
     [ "${bps1:-0}" -gt "$bps_threshold" ] && pass "Stream $STREAM_101 throughput OK (${bps1} B/s)" || fail "Stream $STREAM_101 throughput too low (${bps1} B/s < ${bps_threshold})"
     [ "${bps2:-0}" -gt "$bps_threshold" ] && pass "Stream $STREAM_102 throughput OK (${bps2} B/s)" || fail "Stream $STREAM_102 throughput too low (${bps2} B/s < ${bps_threshold})"
 
-    # Replay percentage < 25% (gap-fill limited to 2 segment replays per gap,
-    # then null packets — constant replay is not acceptable to viewers)
+    # Replay percentage < 5% (no segment replay — only null packet gap-fill)
     local replay1_int replay2_int
     replay1_int=$(printf "%.0f" "$replay_pct1" 2>/dev/null || echo 100)
     replay2_int=$(printf "%.0f" "$replay_pct2" 2>/dev/null || echo 100)
-    [ "$replay1_int" -lt 25 ] && pass "Stream $STREAM_101 replay ratio OK (${replay_pct1}% < 25%)" || fail "Stream $STREAM_101 too much replay (${replay_pct1}% >= 25%)"
-    [ "$replay2_int" -lt 25 ] && pass "Stream $STREAM_102 replay ratio OK (${replay_pct2}% < 25%)" || fail "Stream $STREAM_102 too much replay (${replay_pct2}% >= 25%)"
+    [ "$replay1_int" -lt 5 ] && pass "Stream $STREAM_101 replay ratio OK (${replay_pct1}% < 5%)" || fail "Stream $STREAM_101 too much replay (${replay_pct1}% >= 5%)"
+    [ "$replay2_int" -lt 5 ] && pass "Stream $STREAM_102 replay ratio OK (${replay_pct2}% < 5%)" || fail "Stream $STREAM_102 too much replay (${replay_pct2}% >= 5%)"
 
     # Source-content duplicate detection: raw PTS overlap across captures.
     # Duplicate segments are SKIPPED (not written to output), so viewers see only

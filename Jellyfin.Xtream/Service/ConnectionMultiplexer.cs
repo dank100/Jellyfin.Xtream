@@ -547,9 +547,9 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 // Pre-compute yield parameters once per poll cycle.
                 int activeCount = _channels.Count(kvp => kvp.Value.SubscriberCount > 0);
                 bool needsYield = activeCount > _maxConnections;
-                const int minFreshSegments = 2;
+                const int minFreshSegments = 1;
                 // Wall-clock safety: don't capture forever even if no fresh content arrives.
-                const double maxCaptureSeconds = 8.0;
+                const double maxCaptureSeconds = 5.0;
 
                 for (int i = completedCount; i < safeCount; i++)
                 {
