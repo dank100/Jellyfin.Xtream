@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Replace ffmpeg remuxer with in-process TsTimestampRewriter for zero-latency PTS/DTS/PCR normalization and continuity counter fixup. Wall-clock-based discontinuity adjustment prevents PTS drift during round-robin multiplexing. Null TS packet gap-fill keeps transcoder alive without backward timestamps. Add round-robin crash protection with error recovery. 13 unit tests.",
+        "checksum": "0e064f2d49db9fdb676fba5ca2c1349d",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.47.0/jellyfin-xtream_0.9.47.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-27T04:02:15Z",
+        "version": "0.9.47.0"
+      },
+      {
         "changelog": "Optimize prebuffer and round-robin for stable playback\n\n- Use all available segments as prebuffer for larger initial burst\n- Increase Open wait to 5 segments\n- Reduce yield to 4 for faster round-robin cycling\n- Add -err_detect ignore_err to remuxer\n- Add remuxer exit code logging",
         "checksum": "2f3d6d1aa3e213d3cc5991787147934a",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.45.0/jellyfin-xtream_0.9.45.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-23T17:04:04Z",
         "version": "0.9.9.0"
-      },
-      {
-        "changelog": "Release v0.9.8\n\n**Full Changelog**: https://github.com/dank100/Jellyfin.Xtream/compare/v0.9.7...v0.9.8",
-        "checksum": "d49c6ebdaa1775caa36c6208fba930b8",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.8/jellyfin-xtream_0.9.8.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-21T20:09:40Z",
-        "version": "0.9.8.0"
       }
     ]
   }
