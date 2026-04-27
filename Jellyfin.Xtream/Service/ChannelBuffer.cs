@@ -194,6 +194,17 @@ public sealed class ChannelBuffer : IDisposable
     {
         if (_segments.Count == 0)
         {
+            // Write a valid but empty live playlist so consumers know
+            // there is no content yet (instead of serving stale segments).
+            var emptyLines = new List<string>
+            {
+                "#EXTM3U",
+                "#EXT-X-VERSION:3",
+                "#EXT-X-TARGETDURATION:2",
+                $"#EXT-X-MEDIA-SEQUENCE:{_prunedCount}",
+            };
+
+            File.WriteAllLines(PlaylistPath, emptyLines);
             return;
         }
 
