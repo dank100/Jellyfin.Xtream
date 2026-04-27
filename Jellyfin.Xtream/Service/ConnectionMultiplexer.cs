@@ -497,7 +497,9 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
 
         // Monitor the segment list file for completed segments.
         int completedCount = 0;
+        int freshSegmentCount = 0;
         bool firstSegment = true;
+        var captureStart = DateTime.UtcNow;
         try
         {
             while (!ct.IsCancellationRequested && !process.HasExited)
@@ -545,7 +547,9 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                 // Pre-compute yield parameters once per poll cycle.
                 int activeCount = _channels.Count(kvp => kvp.Value.SubscriberCount > 0);
                 bool needsYield = activeCount > _maxConnections;
-                const int minSegments = 3;
+                const int minFreshSegments = 2;
+                // Wall-clock safety: don't capture forever even if no fresh content arrives.
+                const double maxCaptureSeconds = 15.0;
 
                 for (int i = completedCount; i < safeCount; i++)
                 {
@@ -555,6 +559,35 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     if (!File.Exists(segPath) || new FileInfo(segPath).Length == 0)
                     {
                         continue;
+                    }
+
+                    // Read raw PTS to determine if this segment is fresh or duplicate.
+                    // Only fresh segments count toward the yield threshold.
+                    bool isFreshSegment = false;
+                    long bufferMaxPts = buffer.MaxRawPtsSeen;
+                    try
+                    {
+                        byte[] segData = await File.ReadAllBytesAsync(segPath, ct).ConfigureAwait(false);
+                        long rawLastPts = TsTimestampRewriter.ReadLastPts(segData);
+                        if (rawLastPts >= 0 && bufferMaxPts >= 0)
+                        {
+                            isFreshSegment = TsTimestampRewriter.WrapDiff(rawLastPts, bufferMaxPts) > 0;
+                        }
+                        else if (bufferMaxPts < 0)
+                        {
+                            // First segment ever — always fresh
+                            isFreshSegment = true;
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // Can't read PTS — assume fresh to avoid stuck captures
+                        isFreshSegment = true;
+                    }
+
+                    if (isFreshSegment)
+                    {
+                        freshSegmentCount++;
                     }
 
                     var segment = new SegmentInfo
@@ -570,19 +603,22 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     completedCount = i + 1;
 
                     _logger.LogInformation(
-                        "Continuous capture: segment {Filename} ready for stream {StreamId}",
+                        "Continuous capture: segment {Filename} ready for stream {StreamId} (fresh={Fresh}, freshCount={FreshCount})",
                         segFilename,
-                        buffer.StreamId);
+                        buffer.StreamId,
+                        isFreshSegment,
+                        freshSegmentCount);
 
-                    // Check yield immediately after each segment to prevent over-capture.
-                    // Without this, burst segments (e.g. 5 arriving in one poll) would all
-                    // be processed before the yield check, starving other channels.
-                    if (needsYield && completedCount >= minSegments)
+                    // Yield when we have enough FRESH segments, or wall-clock timeout.
+                    double captureElapsed = (DateTime.UtcNow - captureStart).TotalSeconds;
+                    if (needsYield && (freshSegmentCount >= minFreshSegments || captureElapsed >= maxCaptureSeconds))
                     {
                         _logger.LogInformation(
-                            "Yielding capture for stream {StreamId} after {Count} segments (live={IsLive})",
+                            "Yielding capture for stream {StreamId} after {Count} segments ({Fresh} fresh, {Elapsed:F1}s, live={IsLive})",
                             buffer.StreamId,
                             completedCount,
+                            freshSegmentCount,
+                            captureElapsed,
                             buffer.LiveViewerCount > 0);
                         shouldYield = true;
                         break;

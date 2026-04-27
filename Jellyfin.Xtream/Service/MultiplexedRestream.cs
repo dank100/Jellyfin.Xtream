@@ -271,6 +271,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                         if (rawLastPts >= 0 && (maxRawPtsSeen < 0 || TsTimestampRewriter.WrapDiff(rawLastPts, maxRawPtsSeen) > 0))
                         {
                             maxRawPtsSeen = rawLastPts;
+                            channelBuffer.MaxRawPtsSeen = maxRawPtsSeen;
                         }
 
                         if (isDuplicate)
