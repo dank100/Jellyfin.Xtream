@@ -445,7 +445,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             Arguments = $"-fflags +nobuffer -analyzeduration 500000 -probesize 500000 "
                 + $"{userAgentArg}-i \"{url}\""
                 + " -map 0 -dn -sn -c copy"
-                + $" -f segment -segment_time {sliceSeconds} -break_non_keyframes 1 -segment_format mpegts"
+                + $" -f segment -segment_time {sliceSeconds} -segment_format mpegts"
                 + $" -segment_list \"{segListPath}\" -segment_list_type csv"
                 + $" -y \"{segPattern}\"",
             UseShellExecute = false,
