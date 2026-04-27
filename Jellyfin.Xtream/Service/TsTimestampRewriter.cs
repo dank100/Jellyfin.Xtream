@@ -126,9 +126,12 @@ internal sealed class TsTimestampRewriter
     private static long Wrap(long pts) => ((pts % PtsWrap) + PtsWrap) % PtsWrap;
 
     /// <summary>
-    /// Reads the first PTS found in the TS data.
+    /// Reads the first PTS found in the raw (pre-rewrite) TS data.
+    /// Exposed for source-content duplicate detection.
     /// </summary>
-    private static long ReadFirstPts(ReadOnlySpan<byte> data)
+    /// <param name="data">Raw MPEG-TS data (multiple 188-byte packets).</param>
+    /// <returns>The first PTS value found, or -1 if no PTS present.</returns>
+    internal static long ReadFirstPts(ReadOnlySpan<byte> data)
     {
         for (int offset = 0; offset + TsPacketSize <= data.Length; offset += TsPacketSize)
         {
@@ -143,9 +146,12 @@ internal sealed class TsTimestampRewriter
     }
 
     /// <summary>
-    /// Reads the last PTS found in the TS data.
+    /// Reads the last PTS found in the raw (pre-rewrite) TS data.
+    /// Exposed for source-content duplicate detection.
     /// </summary>
-    private static long ReadLastPts(ReadOnlySpan<byte> data)
+    /// <param name="data">Raw MPEG-TS data (multiple 188-byte packets).</param>
+    /// <returns>The last PTS value found, or -1 if no PTS present.</returns>
+    internal static long ReadLastPts(ReadOnlySpan<byte> data)
     {
         long last = -1;
         for (int offset = 0; offset + TsPacketSize <= data.Length; offset += TsPacketSize)

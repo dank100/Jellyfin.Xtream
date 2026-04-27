@@ -686,6 +686,14 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             ? 100.0 * gapFillBytes / (freshBytes + gapFillBytes)
             : 0;
 
+        // Source-content duplicate detection: raw PTS overlap across captures.
+        long duplicateSegments = restream.DuplicateSegments;
+        long duplicateBytes = restream.DuplicateBytes;
+        long totalSegments = restream.TotalSegments;
+        double duplicatePct = totalSegments > 0
+            ? 100.0 * duplicateSegments / totalSegments
+            : 0;
+
         restream.Dispose();
 
         return Ok(new
@@ -708,6 +716,10 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             GapFillBytes = gapFillBytes,
             FreshBytes = freshBytes,
             ReplayPct = Math.Round(replayPct, 1),
+            DuplicateSegments = duplicateSegments,
+            DuplicateBytes = duplicateBytes,
+            TotalSegments = totalSegments,
+            DuplicatePct = Math.Round(duplicatePct, 1),
         });
     }
 

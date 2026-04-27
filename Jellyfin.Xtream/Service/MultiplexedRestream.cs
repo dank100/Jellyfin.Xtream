@@ -50,6 +50,9 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     private long _gapFillCount;
     private long _gapFillBytes;
     private long _freshBytes;
+    private long _duplicateSegments;
+    private long _duplicateBytes;
+    private long _totalSegments;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MultiplexedRestream"/> class.
@@ -107,6 +110,15 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
     /// <summary>Gets the total bytes written from fresh (non-replay) segments.</summary>
     public long FreshBytes => Interlocked.Read(ref _freshBytes);
+
+    /// <summary>Gets the number of segments detected as source-content duplicates.</summary>
+    public long DuplicateSegments => Interlocked.Read(ref _duplicateSegments);
+
+    /// <summary>Gets the total bytes of segments detected as source-content duplicates.</summary>
+    public long DuplicateBytes => Interlocked.Read(ref _duplicateBytes);
+
+    /// <summary>Gets the total number of segments seen (fresh + duplicate).</summary>
+    public long TotalSegments => Interlocked.Read(ref _totalSegments);
 
     /// <inheritdoc />
     public MediaSourceInfo MediaSource { get; set; }
@@ -197,6 +209,11 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         // In-process timestamp + continuity counter normalization — zero latency.
         var tsRewriter = new TsTimestampRewriter();
 
+        // Track the highest raw (source) PTS seen to detect duplicate content.
+        // When the IPTV server replays its ring buffer on reconnect, the raw PTS
+        // range will overlap with what we've already seen.
+        long maxRawPtsSeen = -1;
+
         long totalWritten = 0;
         int segmentsWritten = 0;
         var lastWriteTime = DateTime.UtcNow;
@@ -234,6 +251,24 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                     try
                     {
                         byte[] data = await File.ReadAllBytesAsync(segPath, ct).ConfigureAwait(false);
+
+                        // Read raw (source) PTS before rewriting to detect duplicate content.
+                        long rawLastPts = TsTimestampRewriter.ReadLastPts(data);
+                        Interlocked.Increment(ref _totalSegments);
+
+                        bool isDuplicate = false;
+                        if (rawLastPts >= 0 && maxRawPtsSeen >= 0 && rawLastPts <= maxRawPtsSeen)
+                        {
+                            isDuplicate = true;
+                            Interlocked.Increment(ref _duplicateSegments);
+                            Interlocked.Add(ref _duplicateBytes, data.Length);
+                        }
+
+                        if (rawLastPts >= 0 && rawLastPts > maxRawPtsSeen)
+                        {
+                            maxRawPtsSeen = rawLastPts;
+                        }
+
                         tsRewriter.Rewrite(data);
                         await _buffer.WriteAsync(data, ct).ConfigureAwait(false);
                         totalWritten += data.Length;
@@ -244,13 +279,15 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                         Interlocked.Add(ref _freshBytes, data.Length);
 
                         _logger.LogInformation(
-                            "Pump for channel {StreamId}: wrote segment {Filename} ({Bytes} bytes, adjusted={Adjusted}, lastPts={LastPts}, adj={Adj}), total: {Segs} segments, {Total} bytes",
+                            "Pump for channel {StreamId}: wrote segment {Filename} ({Bytes} bytes, adjusted={Adjusted}, lastPts={LastPts}, adj={Adj}, rawPts={RawPts}, dup={Dup}), total: {Segs} segments, {Total} bytes",
                             _streamId,
                             seg.Filename,
                             data.Length,
                             tsRewriter.Adjustment != 0,
                             tsRewriter.LastOutputPts,
                             tsRewriter.Adjustment,
+                            rawLastPts,
+                            isDuplicate,
                             segmentsWritten,
                             totalWritten);
                     }

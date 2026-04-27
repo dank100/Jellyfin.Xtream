@@ -436,4 +436,81 @@ public class TsTimestampRewriterTests
             prevLast = gapLast;
         }
     }
+
+    // --- Source-content duplicate detection ---
+
+    [Fact]
+    public void ReadFirstPts_And_ReadLastPts_DetectDuplicateSourceContent()
+    {
+        // Simulates the production bug: IPTV server replays same buffer on reconnect.
+        // Each capture returns segments with the same raw PTS range.
+        // ReadFirstPts/ReadLastPts should detect the overlap.
+
+        // First capture: PTS 100000 → 200000 → 300000
+        var seg1 = TsPacketBuilder.BuildSegment(
+            new long[] { 100_000, 200_000, 300_000 });
+
+        // Second capture (reconnect): same PTS range — duplicate
+        var seg2 = TsPacketBuilder.BuildSegment(
+            new long[] { 100_000, 200_000, 300_000 });
+
+        // Third capture (reconnect): PTS advances — fresh content
+        var seg3 = TsPacketBuilder.BuildSegment(
+            new long[] { 350_000, 450_000, 550_000 });
+
+        long maxRawPts = -1;
+
+        // Process seg1 — first ever, not duplicate
+        long lastPts1 = TsTimestampRewriter.ReadLastPts(seg1);
+        Assert.True(lastPts1 > maxRawPts, "First segment should be new");
+        maxRawPts = lastPts1;
+
+        // Process seg2 — same raw PTS, should be flagged as duplicate
+        long lastPts2 = TsTimestampRewriter.ReadLastPts(seg2);
+        Assert.True(lastPts2 <= maxRawPts,
+            $"Duplicate segment lastPts ({lastPts2}) should be <= maxRawPts ({maxRawPts})");
+
+        // Process seg3 — fresh content
+        long lastPts3 = TsTimestampRewriter.ReadLastPts(seg3);
+        Assert.True(lastPts3 > maxRawPts,
+            $"Fresh segment lastPts ({lastPts3}) should be > maxRawPts ({maxRawPts})");
+    }
+
+    [Fact]
+    public void ReadFirstPts_ReturnsMinusOne_ForNoPesData()
+    {
+        // Null TS packets have no PES — should return -1
+        byte[] nullPackets = new byte[188 * 3];
+        for (int i = 0; i < 3; i++)
+        {
+            int off = i * 188;
+            nullPackets[off] = 0x47;
+            nullPackets[off + 1] = 0x1F;
+            nullPackets[off + 2] = 0xFF;
+            nullPackets[off + 3] = 0x10;
+        }
+
+        Assert.Equal(-1, TsTimestampRewriter.ReadFirstPts(nullPackets));
+        Assert.Equal(-1, TsTimestampRewriter.ReadLastPts(nullPackets));
+    }
+
+    [Fact]
+    public void DuplicateDetection_PartialOverlap_AcceptsNewContent()
+    {
+        // Partial overlap: segment starts in already-seen range but extends beyond.
+        // The last PTS is beyond maxRawPts → should be accepted as fresh.
+
+        var seg1 = TsPacketBuilder.BuildSegment(
+            new long[] { 100_000, 200_000, 300_000 });
+
+        // Partial overlap: starts at 250000 (already seen) but ends at 400000 (new)
+        var seg2 = TsPacketBuilder.BuildSegment(
+            new long[] { 250_000, 350_000, 400_000 });
+
+        long maxRawPts = TsTimestampRewriter.ReadLastPts(seg1);
+        long lastPts2 = TsTimestampRewriter.ReadLastPts(seg2);
+
+        Assert.True(lastPts2 > maxRawPts,
+            $"Partially overlapping segment with new tail ({lastPts2}) should be > maxRawPts ({maxRawPts})");
+    }
 }
