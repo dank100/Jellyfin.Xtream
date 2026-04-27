@@ -681,9 +681,10 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
         // Gap-fill stats from the restream
         long gapFillCount = restream.GapFillCount;
         long gapFillBytes = restream.GapFillBytes;
+        long replayBytes = restream.ReplayBytes;
         long freshBytes = restream.FreshBytes;
-        double replayPct = (freshBytes + gapFillBytes) > 0
-            ? 100.0 * gapFillBytes / (freshBytes + gapFillBytes)
+        double replayPct = (freshBytes + replayBytes) > 0
+            ? 100.0 * replayBytes / (freshBytes + replayBytes)
             : 0;
 
         // Source-content duplicate detection: raw PTS overlap across captures.
