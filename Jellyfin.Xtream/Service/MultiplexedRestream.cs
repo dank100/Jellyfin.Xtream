@@ -273,7 +273,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                         // the source PTS has likely wrapped (ring buffer recycled). Reset
                         // the tracker so we accept content again — repeated footage is better
                         // than a dead stream.
-                        const int maxConsecutiveSkips = 8;
+                        const int maxConsecutiveSkips = 3;
                         if (isDuplicate && consecutiveSkips >= maxConsecutiveSkips)
                         {
                             _logger.LogWarning(

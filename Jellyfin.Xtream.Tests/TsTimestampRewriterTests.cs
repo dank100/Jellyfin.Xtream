@@ -527,7 +527,7 @@ public class TsTimestampRewriterTests
         // Captures cycle through the clip, building maxRawPtsSeen up to the max.
         // After the clip wraps, all new segments have lower PTS → all "duplicate".
         const long clipEnd = 2_700_000;
-        const int maxConsecutiveSkips = 8;
+        const int maxConsecutiveSkips = 3;
 
         long maxRawPtsSeen = -1;
         int consecutiveSkips = 0;
