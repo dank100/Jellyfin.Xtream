@@ -75,13 +75,6 @@ public sealed class ChannelBuffer : IDisposable
     public double TsOffsetSeconds { get; set; }
 
     /// <summary>
-    /// Gets or sets the highest raw (source, pre-rewrite) PTS seen by the pump.
-    /// Used by the capture to avoid yielding while only duplicate content is available.
-    /// Updated by <see cref="MultiplexedRestream"/> pump, read by <see cref="ConnectionMultiplexer"/> capture.
-    /// </summary>
-    public long MaxRawPtsSeen { get; set; } = -1;
-
-    /// <summary>
     /// Allocates the next segment filename for this channel.
     /// </summary>
     /// <returns>The filename (not full path) for the new segment.</returns>

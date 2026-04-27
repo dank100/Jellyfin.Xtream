@@ -1082,15 +1082,11 @@ test_live_stream_continuity() {
     replay_pct2=$(_jval "$result2" ReplayPct 100)
     gapfill1=$(_jval "$result1" GapFillReplays 0)
     gapfill2=$(_jval "$result2" GapFillReplays 0)
-    dup_pct1=$(_jval "$result1" DuplicatePct 100)
-    dup_pct2=$(_jval "$result2" DuplicatePct 100)
-    dup_segs1=$(_jval "$result1" DuplicateSegments 0)
-    dup_segs2=$(_jval "$result2" DuplicateSegments 0)
     total_segs1=$(_jval "$result1" TotalSegments 0)
     total_segs2=$(_jval "$result2" TotalSegments 0)
 
-    log "Stream $STREAM_101: ${bytes1}B, max gap ${gap1}ms, P95 ${p95_1}ms, gaps>2s: ${gaps2s_1}, replay: ${replay_pct1}%, gapfills: ${gapfill1}, open: ${open1}ms, dup: ${dup_pct1}% (${dup_segs1}/${total_segs1} segs)"
-    log "Stream $STREAM_102: ${bytes2}B, max gap ${gap2}ms, P95 ${p95_2}ms, gaps>2s: ${gaps2s_2}, replay: ${replay_pct2}%, gapfills: ${gapfill2}, open: ${open2}ms, dup: ${dup_pct2}% (${dup_segs2}/${total_segs2} segs)"
+    log "Stream $STREAM_101: ${bytes1}B, max gap ${gap1}ms, P95 ${p95_1}ms, gaps>2s: ${gaps2s_1}, replay: ${replay_pct1}%, gapfills: ${gapfill1}, open: ${open1}ms, segs: ${total_segs1}"
+    log "Stream $STREAM_102: ${bytes2}B, max gap ${gap2}ms, P95 ${p95_2}ms, gaps>2s: ${gaps2s_2}, replay: ${replay_pct2}%, gapfills: ${gapfill2}, open: ${open2}ms, segs: ${total_segs2}"
 
     # Assertions — tight thresholds
     local gap_threshold=4000
@@ -1121,18 +1117,6 @@ test_live_stream_continuity() {
     replay2_int=$(printf "%.0f" "$replay_pct2" 2>/dev/null || echo 100)
     [ "$replay1_int" -lt 5 ] && pass "Stream $STREAM_101 replay ratio OK (${replay_pct1}% < 5%)" || fail "Stream $STREAM_101 too much replay (${replay_pct1}% >= 5%)"
     [ "$replay2_int" -lt 5 ] && pass "Stream $STREAM_102 replay ratio OK (${replay_pct2}% < 5%)" || fail "Stream $STREAM_102 too much replay (${replay_pct2}% >= 5%)"
-
-    # Source-content duplicate detection: raw PTS overlap across captures.
-    # Duplicate segments are SKIPPED (not written to output), so viewers see only
-    # fresh content. The metric counts source-level duplicates — some overlap is
-    # expected with the mock's 30s clip (PTS wraps quickly). Real IPTV sources
-    # with hours of content would show near-zero duplication.
-    # Threshold: < 75% (practical for 30s mock clip with 2 streams).
-    local dup1_int dup2_int
-    dup1_int=$(printf "%.0f" "$dup_pct1" 2>/dev/null || echo 100)
-    dup2_int=$(printf "%.0f" "$dup_pct2" 2>/dev/null || echo 100)
-    [ "$dup1_int" -lt 75 ] && pass "Stream $STREAM_101 source freshness OK (dup ${dup_pct1}% < 75%)" || fail "Stream $STREAM_101 too many source duplicates (dup ${dup_pct1}% >= 75%, ${dup_segs1}/${total_segs1} segs)"
-    [ "$dup2_int" -lt 75 ] && pass "Stream $STREAM_102 source freshness OK (dup ${dup_pct2}% < 75%)" || fail "Stream $STREAM_102 too many source duplicates (dup ${dup_pct2}% >= 75%, ${dup_segs2}/${total_segs2} segs)"
 
     # Open latency < 30s
     local open1_int open2_int
@@ -1208,13 +1192,10 @@ test_live_stream_continuity() {
     gaps5s_1=$(_jval "$result1" GapsOver5s 0)
     gaps5s_2=$(_jval "$result2" GapsOver5s 0)
     gaps5s_3=$(_jval "$result3" GapsOver5s 0)
-    dup_pct1=$(_jval "$result1" DuplicatePct 100)
-    dup_pct2=$(_jval "$result2" DuplicatePct 100)
-    dup_pct3=$(_jval "$result3" DuplicatePct 100)
 
-    log "3-stream $STREAM_101: ${bytes1}B, max gap ${gap1}ms, replay ${replay_pct1}%, ${bps1} B/s, dup ${dup_pct1}%"
-    log "3-stream $STREAM_102: ${bytes2}B, max gap ${gap2}ms, replay ${replay_pct2}%, ${bps2} B/s, dup ${dup_pct2}%"
-    log "3-stream $STREAM_103: ${bytes3}B, max gap ${gap3}ms, replay ${replay_pct3}%, ${bps3} B/s, dup ${dup_pct3}%"
+    log "3-stream $STREAM_101: ${bytes1}B, max gap ${gap1}ms, replay ${replay_pct1}%, ${bps1} B/s"
+    log "3-stream $STREAM_102: ${bytes2}B, max gap ${gap2}ms, replay ${replay_pct2}%, ${bps2} B/s"
+    log "3-stream $STREAM_103: ${bytes3}B, max gap ${gap3}ms, replay ${replay_pct3}%, ${bps3} B/s"
 
     # 3-stream thresholds (more relaxed — longer round-robin cycle)
     local gap_threshold_3=6000
@@ -1252,15 +1233,6 @@ test_live_stream_continuity() {
     [ "$replay1_int" -lt 50 ] && pass "3-stream $STREAM_101 replay OK (${replay_pct1}%)" || fail "3-stream $STREAM_101 too much replay (${replay_pct1}%)"
     [ "$replay2_int" -lt 50 ] && pass "3-stream $STREAM_102 replay OK (${replay_pct2}%)" || fail "3-stream $STREAM_102 too much replay (${replay_pct2}%)"
     [ "$replay3_int" -lt 50 ] && pass "3-stream $STREAM_103 replay OK (${replay_pct3}%)" || fail "3-stream $STREAM_103 too much replay (${replay_pct3}%)"
-
-    # Source-content duplicate detection (3-stream, relaxed threshold — 80%)
-    dup1_int=$(printf "%.0f" "$dup_pct1" 2>/dev/null || echo 100)
-    dup2_int=$(printf "%.0f" "$dup_pct2" 2>/dev/null || echo 100)
-    local dup3_int
-    dup3_int=$(printf "%.0f" "$dup_pct3" 2>/dev/null || echo 100)
-    [ "$dup1_int" -lt 80 ] && pass "3-stream $STREAM_101 dup OK (${dup_pct1}%)" || fail "3-stream $STREAM_101 too many dups (${dup_pct1}%)"
-    [ "$dup2_int" -lt 80 ] && pass "3-stream $STREAM_102 dup OK (${dup_pct2}%)" || fail "3-stream $STREAM_102 too many dups (${dup_pct2}%)"
-    [ "$dup3_int" -lt 80 ] && pass "3-stream $STREAM_103 dup OK (${dup_pct3}%)" || fail "3-stream $STREAM_103 too many dups (${dup_pct3}%)"
 
     # All 3 ran for at least 75% of requested duration
     elapsed1_int=$(printf "%.0f" "$elapsed1" 2>/dev/null || echo 0)

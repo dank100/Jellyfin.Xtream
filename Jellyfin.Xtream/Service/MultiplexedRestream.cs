@@ -50,8 +50,6 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     private long _gapFillCount;
     private long _gapFillBytes;
     private long _freshBytes;
-    private long _duplicateSegments;
-    private long _duplicateBytes;
     private long _totalSegments;
 
     /// <summary>
@@ -111,13 +109,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     /// <summary>Gets the total bytes written from fresh (non-replay) segments.</summary>
     public long FreshBytes => Interlocked.Read(ref _freshBytes);
 
-    /// <summary>Gets the number of segments detected as source-content duplicates.</summary>
-    public long DuplicateSegments => Interlocked.Read(ref _duplicateSegments);
-
-    /// <summary>Gets the total bytes of segments detected as source-content duplicates.</summary>
-    public long DuplicateBytes => Interlocked.Read(ref _duplicateBytes);
-
-    /// <summary>Gets the total number of segments seen (fresh + duplicate).</summary>
+    /// <summary>Gets the total number of segments processed.</summary>
     public long TotalSegments => Interlocked.Read(ref _totalSegments);
 
     /// <inheritdoc />
@@ -209,19 +201,12 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         // In-process timestamp + continuity counter normalization — zero latency.
         var tsRewriter = new TsTimestampRewriter();
 
-        // Track the highest raw (source) PTS seen to detect duplicate content.
-        // When the IPTV server replays its ring buffer on reconnect, the raw PTS
-        // range will overlap with what we've already seen.
-        long maxRawPtsSeen = -1;
-        int consecutiveSkips = 0;
-
         long totalWritten = 0;
         int segmentsWritten = 0;
         var lastWriteTime = DateTime.UtcNow;
 
         // Gap-fill: null TS packets (PID 0x1FFF) keep the transcoder's TCP
-        // connection alive during capture gaps. No segment replay to avoid
-        // visible content loops for viewers.
+        // connection alive during capture gaps.
         const int gapFillThresholdMs = 2000;
         const int nullPacketCount = 100; // 100 × 188 = 18.8 KB per gap-fill write
         byte[] nullTsPackets = BuildNullTsPackets(nullPacketCount);
@@ -252,69 +237,13 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                     try
                     {
                         byte[] data = await File.ReadAllBytesAsync(segPath, ct).ConfigureAwait(false);
-
-                        // Read raw (source) PTS before rewriting to detect duplicate content.
-                        // Use both first and last PTS: skip only when the ENTIRE segment
-                        // is within the already-seen range. Partial overlap (first < max
-                        // but last > max) is accepted as fresh.
-                        long rawFirstPts = TsTimestampRewriter.ReadFirstPts(data);
-                        long rawLastPts = TsTimestampRewriter.ReadLastPts(data);
                         Interlocked.Increment(ref _totalSegments);
 
-                        bool isDuplicate = false;
-                        if (rawLastPts >= 0 && maxRawPtsSeen >= 0)
-                        {
-                            // Wrap-safe: positive diff means rawLastPts is ahead of maxRawPtsSeen.
-                            long diff = TsTimestampRewriter.WrapDiff(rawLastPts, maxRawPtsSeen);
-                            isDuplicate = diff <= 0;
-                        }
-
-                        // Anti-starvation: if we've skipped too many consecutive segments,
-                        // the source PTS has likely wrapped (ring buffer recycled). Reset
-                        // the tracker so we accept content again — repeated footage is better
-                        // than a dead stream.
-                        const int maxConsecutiveSkips = 3;
-                        if (isDuplicate && consecutiveSkips >= maxConsecutiveSkips)
-                        {
-                            _logger.LogWarning(
-                                "Pump for channel {StreamId}: anti-starvation reset after {Skips} consecutive skips (rawLast={RawLast}, maxSeen={MaxSeen})",
-                                _streamId,
-                                consecutiveSkips,
-                                rawLastPts,
-                                maxRawPtsSeen);
-                            maxRawPtsSeen = -1;
-                            channelBuffer.MaxRawPtsSeen = -1;
-                            isDuplicate = false;
-                            consecutiveSkips = 0;
-                        }
-
-                        if (rawLastPts >= 0 && (maxRawPtsSeen < 0 || TsTimestampRewriter.WrapDiff(rawLastPts, maxRawPtsSeen) > 0))
-                        {
-                            maxRawPtsSeen = rawLastPts;
-                            channelBuffer.MaxRawPtsSeen = maxRawPtsSeen;
-                        }
-
-                        if (isDuplicate)
-                        {
-                            consecutiveSkips++;
-                            Interlocked.Increment(ref _duplicateSegments);
-                            Interlocked.Add(ref _duplicateBytes, data.Length);
-                            lastSegmentIndex = globalIndex;
-
-                            _logger.LogInformation(
-                                "Pump for channel {StreamId}: SKIPPED duplicate segment {Filename} ({Bytes} bytes, rawFirst={RawFirst}, rawLast={RawLast}, maxSeen={MaxSeen}, consSkips={ConsSkips})",
-                                _streamId,
-                                seg.Filename,
-                                data.Length,
-                                rawFirstPts,
-                                rawLastPts,
-                                maxRawPtsSeen,
-                                consecutiveSkips);
-                            continue;
-                        }
-
-                        consecutiveSkips = 0;
-
+                        // Simple pipeline: rewrite PTS/DTS/CC → write to buffer.
+                        // The rewriter handles all discontinuities (backward PTS,
+                        // ring buffer wraps) by adjusting to _lastPts + 1.
+                        // No segment skipping — continuous data flow prevents
+                        // transcoder starvation and viewer-visible freezes.
                         tsRewriter.Rewrite(data);
                         await _buffer.WriteAsync(data, ct).ConfigureAwait(false);
                         totalWritten += data.Length;
@@ -325,14 +254,12 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
                         Interlocked.Add(ref _freshBytes, data.Length);
 
                         _logger.LogInformation(
-                            "Pump for channel {StreamId}: wrote segment {Filename} ({Bytes} bytes, adjusted={Adjusted}, lastPts={LastPts}, adj={Adj}, rawPts={RawPts}), total: {Segs} segments, {Total} bytes",
+                            "Pump for channel {StreamId}: wrote segment {Filename} ({Bytes} bytes, adj={Adj}, lastPts={LastPts}), total: {Segs} segments, {Total} bytes",
                             _streamId,
                             seg.Filename,
                             data.Length,
-                            tsRewriter.Adjustment != 0,
-                            tsRewriter.LastOutputPts,
                             tsRewriter.Adjustment,
-                            rawLastPts,
+                            tsRewriter.LastOutputPts,
                             segmentsWritten,
                             totalWritten);
                     }
