@@ -219,12 +219,15 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         int segmentsWritten = 0;
         var lastWriteTime = DateTime.UtcNow;
 
-        // Gap-fill: write null TS packets (PID 0x1FFF) to keep the transcoder's
-        // TCP connection alive during capture gaps. Null packets carry no PTS/PES,
-        // so they cannot cause backward timestamps or PTS drift.
+        // Gap-fill: replay the last raw segment through the rewriter to keep the
+        // transcoder fed with valid video/audio data during capture gaps. The
+        // rewriter gives it continuous PTS (via _lastPts + 1 discontinuity target).
+        // This prevents the transcoder from starving on prolonged gaps.
+        // Falls back to null TS packets (PID 0x1FFF) before any segment is cached.
         const int gapFillThresholdMs = 2000;
         const int nullPacketCount = 100; // 100 × 188 = 18.8 KB per gap-fill write
         byte[] nullTsPackets = BuildNullTsPackets(nullPacketCount);
+        byte[]? lastRawSegment = null; // cached PRE-rewrite data for gap-fill replay
 
         try
         {
@@ -315,6 +318,9 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
                         consecutiveSkips = 0;
 
+                        // Cache raw data BEFORE rewriting for gap-fill replay.
+                        lastRawSegment = (byte[])data.Clone();
+
                         tsRewriter.Rewrite(data);
                         await _buffer.WriteAsync(data, ct).ConfigureAwait(false);
                         totalWritten += data.Length;
@@ -367,15 +373,27 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
                         if (!hasFresh)
                         {
-                            // Gap-fill: write null TS packets to keep the TCP connection
-                            // alive. Null packets (PID 0x1FFF) contain no PTS/PES data,
-                            // so they cannot cause backward timestamps or PTS drift.
-                            await _buffer.WriteAsync(nullTsPackets, ct).ConfigureAwait(false);
+                            // Gap-fill: replay last raw segment through the rewriter to
+                            // provide the transcoder with valid video/audio data. The
+                            // rewriter creates continuous PTS via its _lastPts + 1
+                            // discontinuity target. Falls back to null packets if no
+                            // segment has been cached yet.
+                            if (lastRawSegment != null)
+                            {
+                                byte[] gapFillData = (byte[])lastRawSegment.Clone();
+                                tsRewriter.Rewrite(gapFillData);
+                                await _buffer.WriteAsync(gapFillData, ct).ConfigureAwait(false);
+                                totalWritten += gapFillData.Length;
+                            }
+                            else
+                            {
+                                await _buffer.WriteAsync(nullTsPackets, ct).ConfigureAwait(false);
+                                totalWritten += nullTsPackets.Length;
+                            }
 
-                            totalWritten += nullTsPackets.Length;
                             lastWriteTime = DateTime.UtcNow;
                             Interlocked.Increment(ref _gapFillCount);
-                            Interlocked.Add(ref _gapFillBytes, nullTsPackets.Length);
+                            Interlocked.Add(ref _gapFillBytes, lastRawSegment?.Length ?? nullTsPackets.Length);
                         }
                     }
                     else
