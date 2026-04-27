@@ -598,69 +598,98 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
 
         double openLatencyMs = openSw.Elapsed.TotalMilliseconds;
 
-        using var stream = restream.GetStream();
-        var buf = new byte[65536];
+        // Monitor the ChannelBuffer for segment production instead of reading
+        // from a TS pipe. This tests the HLS segment path that the player uses.
+        var buffer = connectionMultiplexer.GetBuffer(streamId);
+        if (buffer == null)
+        {
+            restream.Dispose();
+            return Ok(new
+            {
+                StreamId = streamId,
+                Error = "No channel buffer found after open",
+            });
+        }
+
         long totalBytes = 0;
-        int readCount = 0;
+        int segmentCount = 0;
         double maxGapMs = 0;
-        double firstByteMs = 0;
         int gapsOver500ms = 0;
         int gapsOver1s = 0;
         int gapsOver2s = 0;
         int gapsOver5s = 0;
         var gapList = new List<double>();
+        int lastGlobalIndex = -1;
         var sw = Stopwatch.StartNew();
-        var lastReadTime = sw.Elapsed;
-
-        using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        readCts.CancelAfter(TimeSpan.FromSeconds(durationSeconds + 10));
+        var lastSegmentTime = sw.Elapsed;
+        bool firstSegment = true;
+        double firstSegmentMs = 0;
 
         try
         {
             while (sw.Elapsed.TotalSeconds < durationSeconds)
             {
-                int n = await stream.ReadAsync(buf, readCts.Token).ConfigureAwait(false);
-                if (n == 0)
-                {
-                    break;
-                }
+                cancellationToken.ThrowIfCancellationRequested();
+                var segments = buffer.GetSegments();
 
-                var now = sw.Elapsed;
-                double gapMs = (now - lastReadTime).TotalMilliseconds;
-
-                if (readCount == 0)
+                bool foundNew = false;
+                for (int i = 0; i < segments.Count; i++)
                 {
-                    firstByteMs = now.TotalMilliseconds;
-                }
-
-                if (readCount > 0 && gapMs > 500)
-                {
-                    gapList.Add(gapMs);
-                    gapsOver500ms++;
-                    if (gapMs > 1000)
+                    int gi = buffer.GetGlobalIndex(i);
+                    if (gi <= lastGlobalIndex)
                     {
-                        gapsOver1s++;
+                        continue;
                     }
 
-                    if (gapMs > 2000)
+                    var seg = segments[i];
+                    totalBytes += (long)(seg.DurationSeconds * 500_000); // ~4Mbps estimate
+
+                    segmentCount++;
+                    lastGlobalIndex = gi;
+                    foundNew = true;
+
+                    var now = sw.Elapsed;
+                    if (firstSegment)
                     {
-                        gapsOver2s++;
+                        firstSegmentMs = now.TotalMilliseconds;
+                        firstSegment = false;
+                    }
+                    else
+                    {
+                        double gapMs = (now - lastSegmentTime).TotalMilliseconds;
+                        if (gapMs > 500)
+                        {
+                            gapList.Add(gapMs);
+                            gapsOver500ms++;
+                            if (gapMs > 1000)
+                            {
+                                gapsOver1s++;
+                            }
+
+                            if (gapMs > 2000)
+                            {
+                                gapsOver2s++;
+                            }
+
+                            if (gapMs > 5000)
+                            {
+                                gapsOver5s++;
+                            }
+                        }
+
+                        if (gapMs > maxGapMs)
+                        {
+                            maxGapMs = gapMs;
+                        }
                     }
 
-                    if (gapMs > 5000)
-                    {
-                        gapsOver5s++;
-                    }
+                    lastSegmentTime = now;
                 }
 
-                if (gapMs > maxGapMs)
+                if (!foundNew)
                 {
-                    maxGapMs = gapMs;
+                    await Task.Delay(100, cancellationToken).ConfigureAwait(false);
                 }
-
-                lastReadTime = now;
-                totalBytes += n;
-                readCount++;
             }
         }
         catch (OperationCanceledException)
@@ -678,12 +707,6 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
         gapList.Sort();
         double p95GapMs = gapList.Count > 0 ? gapList[(int)(gapList.Count * 0.95)] : 0;
 
-        // Gap-fill stats from the restream
-        long gapFillCount = restream.GapFillCount;
-        long gapFillBytes = restream.GapFillBytes;
-        long freshBytes = restream.FreshBytes;
-        long totalSegments = restream.TotalSegments;
-
         restream.Dispose();
 
         return Ok(new
@@ -692,21 +715,16 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             DurationRequestedSec = durationSeconds,
             ElapsedSec = Math.Round(elapsedSec, 2),
             TotalBytes = totalBytes,
-            ReadCount = readCount,
+            SegmentCount = segmentCount,
             MaxGapMs = Math.Round(maxGapMs, 1),
             P95GapMs = Math.Round(p95GapMs, 1),
             AvgBytesPerSec = (long)avgBytesPerSec,
             OpenLatencyMs = Math.Round(openLatencyMs, 0),
-            FirstByteMs = Math.Round(firstByteMs, 0),
+            FirstSegmentMs = Math.Round(firstSegmentMs, 0),
             GapsOver500ms = gapsOver500ms,
             GapsOver1s = gapsOver1s,
             GapsOver2s = gapsOver2s,
             GapsOver5s = gapsOver5s,
-            GapFillReplays = gapFillCount,
-            GapFillBytes = gapFillBytes,
-            FreshBytes = freshBytes,
-            ReplayPct = 0,
-            TotalSegments = totalSegments,
         });
     }
 

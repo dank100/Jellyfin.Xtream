@@ -36,4 +36,10 @@ public sealed class SegmentInfo
     /// Gets the UTC time at which this segment was captured.
     /// </summary>
     public required DateTime CapturedUtc { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether an <c>#EXT-X-DISCONTINUITY</c> tag should
+    /// precede this segment in the HLS playlist.
+    /// </summary>
+    public bool IsDiscontinuity { get; init; }
 }

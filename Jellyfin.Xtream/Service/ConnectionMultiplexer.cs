@@ -562,10 +562,10 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                         Filename = segFilename,
                         DurationSeconds = i < segDurations.Length ? segDurations[i] : sliceSeconds,
                         CapturedUtc = DateTime.UtcNow,
+                        IsDiscontinuity = firstSegment && buffer.GetSegments().Count > 0,
                     };
 
-                    bool isDiscontinuity = firstSegment && buffer.GetSegments().Count > 0;
-                    buffer.AddSegment(segment, isDiscontinuity);
+                    buffer.AddSegment(segment, segment.IsDiscontinuity);
                     firstSegment = false;
                     completedCount = i + 1;
 
@@ -679,10 +679,10 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                                 Filename = segFilename,
                                 DurationSeconds = i < finalDurations.Length ? finalDurations[i] : sliceSeconds,
                                 CapturedUtc = DateTime.UtcNow,
+                                IsDiscontinuity = firstSegment && buffer.GetSegments().Count > 0,
                             };
 
-                            bool isDiscontinuity = firstSegment && buffer.GetSegments().Count > 0;
-                            buffer.AddSegment(segment, isDiscontinuity);
+                            buffer.AddSegment(segment, segment.IsDiscontinuity);
                             firstSegment = false;
                             completedCount = i + 1;
                         }

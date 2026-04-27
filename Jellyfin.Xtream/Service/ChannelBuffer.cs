@@ -198,35 +198,40 @@ public sealed class ChannelBuffer : IDisposable
         }
 
         double targetDuration = _segments.Max(s => s.DurationSeconds);
+
+        // Count discontinuities that were pruned so the sequence stays correct.
+        int prunedDiscontinuities = 0;
+        // We can't track pruned discontinuities retroactively, so approximate
+        // from the overall DiscontinuitySequence minus those still in the list.
+        int activeDiscontinuities = 0;
+        foreach (var seg in _segments)
+        {
+            if (seg.IsDiscontinuity)
+            {
+                activeDiscontinuities++;
+            }
+        }
+
+        prunedDiscontinuities = Math.Max(0, DiscontinuitySequence - activeDiscontinuities);
+
         var lines = new List<string>
         {
             "#EXTM3U",
             $"#EXT-X-VERSION:3",
             $"#EXT-X-TARGETDURATION:{Math.Ceiling(targetDuration):F0}",
             $"#EXT-X-MEDIA-SEQUENCE:{_prunedCount}",
+            $"#EXT-X-DISCONTINUITY-SEQUENCE:{prunedDiscontinuities}",
         };
-
-        bool needDiscontinuity = false;
-        DateTime? lastCapture = null;
 
         foreach (var seg in _segments)
         {
-            // Insert discontinuity when there is a time gap between captures
-            // (each round-robin cycle reconnects to the stream)
-            if (lastCapture.HasValue && (seg.CapturedUtc - lastCapture.Value).TotalSeconds > seg.DurationSeconds * 2)
-            {
-                needDiscontinuity = true;
-            }
-
-            if (needDiscontinuity)
+            if (seg.IsDiscontinuity)
             {
                 lines.Add("#EXT-X-DISCONTINUITY");
-                needDiscontinuity = false;
             }
 
             lines.Add($"#EXTINF:{seg.DurationSeconds:F3},");
             lines.Add(seg.Filename);
-            lastCapture = seg.CapturedUtc;
         }
 
         File.WriteAllLines(PlaylistPath, lines);
