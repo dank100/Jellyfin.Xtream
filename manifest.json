@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix iOS/Swiftfin transcoding: remove framerate and lower H264 level to prevent StreamBuilder from choosing AV1 transcode over stream copy.",
+        "checksum": "c9a9f68c677ddf00a6e4665e784836a6",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.58.0/jellyfin-xtream_0.9.58.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-29T19:59:50Z",
+        "version": "0.9.58.0"
+      },
+      {
         "changelog": "Fix transcoding on iOS/Swiftfin caused by Jellyfin forcing IsInterlaced=true.\n\nJellyfin LiveTvMediaSourceProvider.Normalize() unconditionally sets IsInterlaced=true for all non-default LiveTV video streams. This causes iOS/Swiftfin to add a yadif deinterlacer → full H264→AV1 software transcode at ~0.4x realtime.\n\nFix: MediaSource getter resets IsInterlaced=false each time Jellyfin reads it, undoing the Normalize tampering.\n\nAlso adds 9 unit tests for MediaSourceInfo configuration.\n\nExpected: stream copy on all clients (Android TV, iOS, web) — no more transcoding.",
         "checksum": "c360943298c9f6b778f17d65e164663e",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.57.0/jellyfin-xtream_0.9.57.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T05:21:02Z",
         "version": "0.9.19.0"
-      },
-      {
-        "changelog": "## Fix recording playback URL mismatch\n\n**Bug:** `RecordingRestream` constructed HLS URLs as `/playlist.m3u8` but the API controller serves at `/stream.m3u8`. This caused ffmpeg exit code 8 when clients tried to watch active recordings via the virtual recording channel.\n\n**Fix:** Aligned URLs to `/stream.m3u8` in `RecordingRestream.cs`.",
-        "checksum": "f64ad01808ff3205ead104e03b6690a5",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.18.0/jellyfin-xtream_0.9.18.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T05:07:38Z",
-        "version": "0.9.18.0"
       }
     ]
   }
