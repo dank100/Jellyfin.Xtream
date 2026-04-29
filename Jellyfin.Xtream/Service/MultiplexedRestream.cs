@@ -152,13 +152,22 @@ public class MultiplexedRestream : ILiveStream, IDisposable
     {
         get
         {
-            if (_mediaSource?.MediaStreams is not null)
+            if (_mediaSource is not null)
             {
-                foreach (var s in _mediaSource.MediaStreams)
+                // Jellyfin's Normalize() sets SupportsDirectStream = false for
+                // live TV sources.  Without DirectStream the StreamBuilder can
+                // only choose DirectPlay or Transcode; since Swiftfin/iOS routes
+                // through the server, it falls to Transcode.  Reset it here.
+                _mediaSource.SupportsDirectStream = true;
+
+                if (_mediaSource.MediaStreams is not null)
                 {
-                    if (s.Type == MediaStreamType.Video)
+                    foreach (var s in _mediaSource.MediaStreams)
                     {
-                        s.IsInterlaced = false;
+                        if (s.Type == MediaStreamType.Video)
+                        {
+                            s.IsInterlaced = false;
+                        }
                     }
                 }
             }
