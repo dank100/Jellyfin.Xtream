@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix iOS/Swiftfin transcoding: Jellyfin Normalize() also sets SupportsDirectStream=false for live TV sources, leaving only DirectPlay or Transcode. Since Swiftfin routes through the server, Transcode was the only option. Now reset SupportsDirectStream=true in MediaSource getter.",
+        "checksum": "330a2bc8cf433bb574c865f16ac9a700",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.59.0/jellyfin-xtream_0.9.59.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-29T20:05:08Z",
+        "version": "0.9.59.0"
+      },
+      {
         "changelog": "Fix iOS/Swiftfin transcoding: remove framerate and lower H264 level to prevent StreamBuilder from choosing AV1 transcode over stream copy.",
         "checksum": "c9a9f68c677ddf00a6e4665e784836a6",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.58.0/jellyfin-xtream_0.9.58.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T05:30:43Z",
         "version": "0.9.20.0"
-      },
-      {
-        "changelog": "## Absolute seekbar for recording channels\n\nSets `RunTimeTicks` on the recording media source based on the timer schedule (including pre/post padding), so the player shows the full scheduled duration instead of a relative 0-based seekbar.",
-        "checksum": "4d55c717695dfe13ae203edd392e168b",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.19.0/jellyfin-xtream_0.9.19.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T05:21:02Z",
-        "version": "0.9.19.0"
       }
     ]
   }
