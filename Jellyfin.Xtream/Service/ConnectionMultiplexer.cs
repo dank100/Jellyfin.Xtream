@@ -19,6 +19,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Xtream.Client;
@@ -40,7 +42,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     /// Grace period in seconds before cleaning up after the last subscriber leaves.
     /// Allows Jellyfin's probe-then-play cycle to reuse the existing buffer.
     /// </summary>
-    private const int GracePeriodSeconds = 15;
+    private const int GracePeriodSeconds = 30;
 
     private readonly ILogger<ConnectionMultiplexer> _logger;
     private readonly IServerConfigurationManager _config;
@@ -48,6 +50,14 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     private readonly ConcurrentDictionary<int, ChannelBuffer> _channels = new();
     private readonly ConcurrentDictionary<int, (Task Task, CancellationTokenSource Cts)> _parallelCaptures = new();
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _gracePeriodTimers = new();
+    private readonly ConcurrentDictionary<int, PersistentCapture> _persistentCaptures = new();
+    private readonly Lazy<HttpClient> _httpClient = new(() =>
+    {
+        var client = new HttpClient();
+        client.Timeout = Timeout.InfiniteTimeSpan;
+        return client;
+    });
+
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private bool _disposed;
@@ -188,6 +198,7 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         _logger.LogInformation("Grace period expired for stream {StreamId}, cleaning up", streamId);
         buffer.State = ChannelBufferState.Idle;
         StopParallelCapture(streamId);
+        await StopPersistentCaptureAsync(streamId).ConfigureAwait(false);
 
         if (_channels.TryRemove(streamId, out var removed))
         {
@@ -250,6 +261,15 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         // Stop all parallel captures
         StopAllParallelCaptures();
 
+        // Stop all persistent captures (await ffmpeg exit before deleting dirs)
+        foreach (var kvp in _persistentCaptures)
+        {
+            await kvp.Value.StopAsync().ConfigureAwait(false);
+            kvp.Value.Dispose();
+        }
+
+        _persistentCaptures.Clear();
+
         // Clean up all buffers
         foreach (var kvp in _channels)
         {
@@ -281,7 +301,20 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         _gracePeriodTimers.Clear();
 
         StopAllParallelCaptures();
+
+        foreach (var kvp in _persistentCaptures)
+        {
+            kvp.Value.Dispose();
+        }
+
+        _persistentCaptures.Clear();
+
         _cts?.Dispose();
+
+        if (_httpClient.IsValueCreated)
+        {
+            _httpClient.Value.Dispose();
+        }
 
         foreach (var kvp in _channels)
         {
@@ -404,9 +437,19 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                         break;
                     }
 
+                    // Skip channels that lost all subscribers during this iteration
+                    // (e.g., unsubscribed while another channel was being captured).
+                    if (buffer.SubscriberCount <= 0 || !_channels.ContainsKey(buffer.StreamId))
+                    {
+                        _logger.LogDebug(
+                            "Skipping capture for stream {StreamId} — no subscribers or buffer removed",
+                            buffer.StreamId);
+                        continue;
+                    }
+
                     try
                     {
-                        int produced = await CaptureStreamAsync(buffer, sliceSeconds, retentionSeconds, ct).ConfigureAwait(false);
+                        int produced = await CaptureStreamAsync(buffer, sliceSeconds, retentionSeconds, ct, stopOnNoSubscribers: true).ConfigureAwait(false);
                         if (produced == 0)
                         {
                             _logger.LogWarning("Capture for stream {StreamId} produced 0 segments, skipping turn", buffer.StreamId);
@@ -492,29 +535,38 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// Runs a continuous ffmpeg capture for a channel using the segment muxer.
-    /// One persistent connection produces segment files automatically.
-    /// Runs until cancelled, the stream ends, or we need to yield to other channels.
+    /// Stops and disposes the persistent capture for a stream, waiting for
+    /// ffmpeg to exit before returning so files can be safely deleted.
     /// </summary>
-    private async Task<int> CaptureStreamAsync(ChannelBuffer buffer, int sliceSeconds, int retentionSeconds, CancellationToken ct)
+    private async Task StopPersistentCaptureAsync(int streamId)
+    {
+        if (_persistentCaptures.TryRemove(streamId, out var capture))
+        {
+            _logger.LogDebug("Stopping persistent capture for stream {StreamId}", streamId);
+            await capture.StopAsync().ConfigureAwait(false);
+            capture.Dispose();
+        }
+    }
+
+    private PersistentCapture GetOrCreatePersistentCapture(ChannelBuffer buffer, int sliceSeconds)
+    {
+        return _persistentCaptures.GetOrAdd(buffer.StreamId, _ => CreatePersistentCapture(buffer, sliceSeconds));
+    }
+
+    private PersistentCapture CreatePersistentCapture(ChannelBuffer buffer, int sliceSeconds)
     {
         PluginConfiguration config = Plugin.Instance.Configuration;
-        string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{buffer.StreamId}";
+        var ffmpegPath = GetFfmpegPath();
 
-        string captureId = Guid.NewGuid().ToString("N")[..8];
+        string captureId = Guid.NewGuid().ToString("N")[..9];
         string segPattern = Path.Combine(buffer.SegmentDir, $"c{captureId}_%05d.ts");
         string segListPath = Path.Combine(buffer.SegmentDir, $"c{captureId}_list.txt");
-
-        var ffmpegPath = GetFfmpegPath();
-        string userAgentArg = string.IsNullOrEmpty(config.UserAgent)
-            ? string.Empty
-            : $"-user_agent \"{config.UserAgent}\" ";
 
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = $"-fflags +nobuffer -analyzeduration 500000 -probesize 500000 "
-                + $"{userAgentArg}-i \"{url}\""
+            Arguments = "-f mpegts -fflags +nobuffer+discardcorrupt"
+                + " -i pipe:0"
                 + " -map 0 -dn -sn -c copy"
                 + $" -f segment -segment_time {sliceSeconds} -segment_format mpegts"
                 + $" -segment_list \"{segListPath}\" -segment_list_type csv"
@@ -526,62 +578,141 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         };
 
         _logger.LogInformation(
-            "Starting continuous capture for stream {StreamId}: {Args}",
+            "Starting persistent ffmpeg for stream {StreamId}: {Args}",
             buffer.StreamId,
             psi.Arguments);
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start ffmpeg for continuous capture");
+        var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start ffmpeg for persistent capture");
 
-        ct.Register(() =>
+        var capture = new PersistentCapture
+        {
+            Process = process,
+            CaptureId = captureId,
+            SegListPath = segListPath,
+            CompletedCount = 0,
+            FirstSegment = true,
+        };
+
+        // Drain stderr to prevent buffer deadlock.
+        capture.StderrTask = Task.Run(async () =>
         {
             try
             {
-                if (!process.HasExited)
+                string? line;
+                while ((line = await process.StandardError.ReadLineAsync().ConfigureAwait(false)) != null)
                 {
-                    process.StandardInput.Write('q');
+                    _logger.LogDebug("Capture stderr [{StreamId}]: {Line}", buffer.StreamId, line);
                 }
             }
             catch
             {
-                // Process may have already exited
+                // Process exited or stream closed.
             }
         });
 
-        // Drain stderr to prevent buffer deadlock.
-        var stderrTask = Task.Run(
+        return capture;
+    }
+
+    /// <summary>
+    /// Captures TS data for a channel using a persistent ffmpeg process.
+    /// Opens an HTTP connection to the IPTV source and forwards data to
+    /// ffmpeg's stdin pipe. The ffmpeg process is reused across calls,
+    /// eliminating the ~4s startup overhead per burst.
+    /// </summary>
+    private async Task<int> CaptureStreamAsync(ChannelBuffer buffer, int sliceSeconds, int retentionSeconds, CancellationToken ct, bool stopOnNoSubscribers = false)
+    {
+        PluginConfiguration config = Plugin.Instance.Configuration;
+        string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{buffer.StreamId}";
+
+        // Get or create the persistent ffmpeg process for this channel.
+        var capture = GetOrCreatePersistentCapture(buffer, sliceSeconds);
+
+        // If the persistent process has exited (crash, pipe error), recreate it.
+        if (capture.Process == null || capture.Process.HasExited)
+        {
+            _logger.LogWarning(
+                "Persistent ffmpeg for stream {StreamId} exited unexpectedly, recreating",
+                buffer.StreamId);
+            _persistentCaptures.TryRemove(buffer.StreamId, out _);
+            capture.Dispose();
+            capture = GetOrCreatePersistentCapture(buffer, sliceSeconds);
+        }
+
+        // Open HTTP connection to the IPTV source.
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrEmpty(config.UserAgent))
+        {
+            request.Headers.UserAgent.TryParseAdd(config.UserAgent);
+        }
+
+        HttpResponseMessage? response = null;
+        Stream? upstream = null;
+        try
+        {
+            response = await _httpClient.Value.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            upstream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to open upstream for stream {StreamId}", buffer.StreamId);
+            response?.Dispose();
+            return 0;
+        }
+
+        _logger.LogInformation(
+            "Opened upstream for stream {StreamId}, forwarding to persistent ffmpeg (captureId={CaptureId})",
+            buffer.StreamId,
+            capture.CaptureId);
+
+        // Background task: forward upstream TS data → ffmpeg stdin.
+        using var forwardCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var stdinStream = capture.Process!.StandardInput.BaseStream;
+        var forwardTask = Task.Run(
             async () =>
             {
+                byte[] buf = new byte[65536];
                 try
                 {
-                    string? line;
-                    while ((line = await process.StandardError.ReadLineAsync(ct).ConfigureAwait(false)) != null)
+                    while (!forwardCts.Token.IsCancellationRequested)
                     {
-                        _logger.LogDebug("Capture stderr [{StreamId}]: {Line}", buffer.StreamId, line);
+                        int read = await upstream.ReadAsync(buf, forwardCts.Token).ConfigureAwait(false);
+                        if (read == 0)
+                        {
+                            break; // Upstream closed.
+                        }
+
+                        await stdinStream.WriteAsync(buf.AsMemory(0, read), forwardCts.Token).ConfigureAwait(false);
+                        await stdinStream.FlushAsync(forwardCts.Token).ConfigureAwait(false);
                     }
                 }
                 catch (OperationCanceledException)
                 {
+                    // Normal yield.
+                }
+                catch (IOException)
+                {
+                    // Upstream or pipe closed.
                 }
             },
-            ct);
+            forwardCts.Token);
 
         // Monitor the segment list file for completed segments.
-        int completedCount = 0;
-        bool firstSegment = true;
+        int startCount = capture.CompletedCount;
+        int segmentsThisBurst = 0;
         try
         {
-            while (!ct.IsCancellationRequested && !process.HasExited)
+            while (!ct.IsCancellationRequested && !capture.Process.HasExited)
             {
                 // Read the CSV segment list written by ffmpeg.
-                // CSV format: filename,start_time,end_time
                 int newCount = 0;
                 double[] segDurations = Array.Empty<double>();
-                if (File.Exists(segListPath))
+                if (File.Exists(capture.SegListPath))
                 {
                     try
                     {
-                        var lines = await File.ReadAllLinesAsync(segListPath, ct).ConfigureAwait(false);
+                        var lines = await File.ReadAllLinesAsync(capture.SegListPath, ct).ConfigureAwait(false);
                         var validLines = lines.Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
                         newCount = validLines.Length;
                         segDurations = new double[newCount];
@@ -602,25 +733,25 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     }
                     catch (IOException)
                     {
-                        // File may be locked by ffmpeg writing it
+                        // File may be locked by ffmpeg writing it.
                     }
                 }
 
                 // Process newly completed segments.
-                // ffmpeg's segment list CSV writes each line when the segment is
-                // finalized, so all listed segments are safe to process.
-                // The file existence + size check below guards against edge cases.
                 int safeCount = newCount;
                 bool shouldYield = false;
 
-                // Pre-compute yield parameters once per poll cycle.
                 int activeCount = _channels.Count(kvp => kvp.Value.SubscriberCount > 0);
                 bool needsYield = activeCount > _maxConnections;
+
+                // With persistent ffmpeg (near-zero per-burst overhead),
+                // 3 segments (6s data) per burst is sufficient: each capture
+                // takes ~2s, so a 2-channel round is ~4s → rate ≈ 1.5x.
                 const int minSegments = 3;
 
-                for (int i = completedCount; i < safeCount; i++)
+                for (int i = capture.CompletedCount; i < safeCount; i++)
                 {
-                    string segFilename = $"c{captureId}_{i:D5}.ts";
+                    string segFilename = $"c{capture.CaptureId}_{i:D5}.ts";
                     string segPath = Path.Combine(buffer.SegmentDir, segFilename);
 
                     if (!File.Exists(segPath) || new FileInfo(segPath).Length == 0)
@@ -633,12 +764,13 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                         Filename = segFilename,
                         DurationSeconds = i < segDurations.Length ? segDurations[i] : sliceSeconds,
                         CapturedUtc = DateTime.UtcNow,
-                        IsDiscontinuity = firstSegment && buffer.GetSegments().Count > 0,
+                        IsDiscontinuity = capture.FirstSegment && buffer.GetSegments().Count > 0,
                     };
 
                     buffer.AddSegment(segment, segment.IsDiscontinuity);
-                    firstSegment = false;
-                    completedCount = i + 1;
+                    capture.FirstSegment = false;
+                    capture.CompletedCount = i + 1;
+                    segmentsThisBurst++;
 
                     _logger.LogInformation(
                         "Continuous capture: segment {Filename} ready for stream {StreamId}",
@@ -646,12 +778,12 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                         buffer.StreamId);
 
                     // Yield after minSegments to let other channels capture.
-                    if (needsYield && completedCount >= minSegments)
+                    if (needsYield && segmentsThisBurst >= minSegments)
                     {
                         _logger.LogInformation(
                             "Yielding capture for stream {StreamId} after {Count} segments (live={IsLive})",
                             buffer.StreamId,
-                            completedCount,
+                            segmentsThisBurst,
                             buffer.LiveViewerCount > 0);
                         shouldYield = true;
                         break;
@@ -663,137 +795,48 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     break;
                 }
 
-                // Do NOT advance completedCount past unprocessed segments.
-                // If a segment file was temporarily unreadable, the next poll
-                // will retry it. Only the for-loop above advances completedCount
-                // on successful processing (line: completedCount = i + 1).
+                // In sequential mode, stop capturing if subscribers left.
+                if (stopOnNoSubscribers && buffer.SubscriberCount <= 0)
+                {
+                    _logger.LogInformation(
+                        "Stopping capture for stream {StreamId} — no subscribers remain",
+                        buffer.StreamId);
+                    break;
+                }
 
-                // Periodic pruning
                 buffer.PruneSegments(retentionSeconds);
 
                 await Task.Delay(100, ct).ConfigureAwait(false);
             }
-
-            // When ffmpeg exits via yield/cancel, the loop may exit before
-            // the last segment is processed. Final segment processing is
-            // deferred to after WaitForExitAsync to ensure ffmpeg has
-            // finished writing.
         }
         catch (OperationCanceledException)
         {
+            // Normal cancellation.
         }
         finally
         {
-            if (!process.HasExited)
-            {
-                try
-                {
-                    // Use sync Write here since we're in finally block cleanup
-#pragma warning disable CA1849
-                    process.StandardInput.Write('q');
-#pragma warning restore CA1849
-                }
-                catch
-                {
-                    // Ignore
-                }
-
-                using var exitCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-                try
-                {
-                    await process.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
-                }
-                catch
-                {
-                    process.Kill();
-                }
-            }
-
-            // Now that ffmpeg has fully exited, process any remaining segments.
-            // The last listed segment is safe to consume because ffmpeg has
-            // closed the file and flushed the segment list.
-            bool gracefulExit = process.HasExited && process.ExitCode == 0;
-            if (File.Exists(segListPath))
-            {
-                try
-                {
-                    var finalLines = (await File.ReadAllLinesAsync(segListPath, CancellationToken.None).ConfigureAwait(false))
-                        .Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-                    int finalCount = gracefulExit ? finalLines.Length : Math.Max(0, finalLines.Length - 1);
-
-                    // Parse CSV durations from final segment list
-                    var finalDurations = new double[finalLines.Length];
-                    for (int li = 0; li < finalLines.Length; li++)
-                    {
-                        var parts = finalLines[li].Split(',');
-                        if (parts.Length >= 3
-                            && double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double start)
-                            && double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double end))
-                        {
-                            finalDurations[li] = Math.Max(0.5, end - start);
-                        }
-                        else
-                        {
-                            finalDurations[li] = sliceSeconds;
-                        }
-                    }
-
-                    for (int i = completedCount; i < finalCount; i++)
-                    {
-                        string segFilename = $"c{captureId}_{i:D5}.ts";
-                        string segPath = Path.Combine(buffer.SegmentDir, segFilename);
-
-                        if (File.Exists(segPath) && new FileInfo(segPath).Length > 0)
-                        {
-                            var segment = new SegmentInfo
-                            {
-                                Filename = segFilename,
-                                DurationSeconds = i < finalDurations.Length ? finalDurations[i] : sliceSeconds,
-                                CapturedUtc = DateTime.UtcNow,
-                                IsDiscontinuity = firstSegment && buffer.GetSegments().Count > 0,
-                            };
-
-                            buffer.AddSegment(segment, segment.IsDiscontinuity);
-                            firstSegment = false;
-                            completedCount = i + 1;
-                        }
-                    }
-                }
-                catch (IOException)
-                {
-                    // Best effort
-                }
-            }
-
+            // Stop forwarding but keep ffmpeg alive for next burst.
+            await forwardCts.CancelAsync().ConfigureAwait(false);
             try
             {
-                await stderrTask.ConfigureAwait(false);
+                await forwardTask.ConfigureAwait(false);
             }
             catch
             {
-                // Ignore
+                // Ignore forward task exceptions.
             }
 
-            // Clean up the segment list file
-            if (File.Exists(segListPath))
-            {
-                try
-                {
-                    File.Delete(segListPath);
-                }
-                catch (IOException)
-                {
-                    // Best effort
-                }
-            }
-
-            _logger.LogInformation(
-                "Continuous capture for stream {StreamId} finished: {Count} segments produced",
-                buffer.StreamId,
-                completedCount);
+            await upstream.DisposeAsync().ConfigureAwait(false);
+            response.Dispose();
         }
 
-        return completedCount;
+        _logger.LogInformation(
+            "Capture burst for stream {StreamId} finished: {Count} segments this burst, {Total} total",
+            buffer.StreamId,
+            segmentsThisBurst,
+            capture.CompletedCount);
+
+        return segmentsThisBurst;
     }
 
     private static string GetFfmpegPath()
@@ -805,5 +848,86 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         }
 
         return "ffmpeg";
+    }
+
+    /// <summary>
+    /// Holds a persistent ffmpeg process that reads MPEG-TS from stdin.
+    /// The process is reused across multiple capture bursts for the same channel,
+    /// eliminating the ~4s startup overhead (process start, analyzeduration,
+    /// keyframe wait) per burst.
+    /// </summary>
+    private sealed class PersistentCapture : IDisposable
+    {
+        private bool _disposed;
+
+        public Process? Process { get; set; }
+
+        public string CaptureId { get; set; } = string.Empty;
+
+        public string SegListPath { get; set; } = string.Empty;
+
+        public int CompletedCount { get; set; }
+
+        public bool FirstSegment { get; set; } = true;
+
+        public Task? StderrTask { get; set; }
+
+        public async Task StopAsync()
+        {
+            if (Process == null || Process.HasExited)
+            {
+                return;
+            }
+
+            try
+            {
+                // Close stdin → sends EOF → ffmpeg flushes and exits.
+                Process.StandardInput.BaseStream.Close();
+            }
+            catch
+            {
+                // Process may have already exited.
+            }
+
+            using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            try
+            {
+                await Process.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
+            }
+            catch
+            {
+                try
+                {
+                    Process.Kill();
+                }
+                catch
+                {
+                    // Best effort.
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            if (Process != null && !Process.HasExited)
+            {
+                try
+                {
+                    Process.Kill();
+                }
+                catch
+                {
+                    // Best effort.
+                }
+            }
+
+            Process?.Dispose();
+        }
     }
 }
