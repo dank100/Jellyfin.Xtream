@@ -65,6 +65,12 @@ public class MultiplexedRestream : ILiveStream, IDisposable
         string hlsPath = $"/Xtream/Multiplex/{streamId}/playlist.m3u8";
         string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
 
+        // Disable probing so Jellyfin does NOT open→probe→close→reopen the
+        // stream.  Without this, Jellyfin's LiveStreamHelper hard-codes
+        // AnalyzeDurationMs=3000 (overriding our 500) and the probe cycle
+        // adds ~3-4s to startup — enough to trigger an Android TV error toast.
+        // With SupportsProbing=false, Jellyfin uses AddMediaInfo() which
+        // preserves our AnalyzeDurationMs and skips the extra round-trip.
         MediaSource = new MediaSourceInfo
         {
             Id = $"multiplex_{streamId}",
@@ -77,7 +83,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             SupportsDirectStream = true,
             SupportsTranscoding = true,
             IsInfiniteStream = true,
-            SupportsProbing = true,
+            SupportsProbing = false,
             IsRemote = false,
         };
 
@@ -122,12 +128,14 @@ public class MultiplexedRestream : ILiveStream, IDisposable
         var buffer = _multiplexer.Subscribe(_streamId, isLive: true);
 
         // Wait for enough segments to fill buffer sufficiently before playback.
-        const int minSegments = 3;
+        // With SupportsProbing=false there is no second open, so 2 segments
+        // (typically 4s at default MultiplexSliceSeconds=2) is sufficient.
+        const int minSegments = 2;
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (buffer.GetSegments().Count < minSegments && DateTime.UtcNow < deadline)
         {
             openCancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(500, openCancellationToken).ConfigureAwait(false);
+            await Task.Delay(200, openCancellationToken).ConfigureAwait(false);
         }
 
         _logger.LogInformation(
