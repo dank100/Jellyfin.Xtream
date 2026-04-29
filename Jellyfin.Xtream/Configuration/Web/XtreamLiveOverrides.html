@@ -34,6 +34,7 @@
     }
     .xtream-overrides-table .col-num { width: 5em; }
     .xtream-overrides-table .col-name { width: 14em; }
+    .xtream-overrides-table .col-stream { width: 12em; }
     .xtream-overrides-table .col-logo { min-width: 10em; }
     .xtream-overrides-table .col-tz { width: 10em; }
     .xtream-overrides-table .col-src { width: 10em; }
@@ -65,6 +66,35 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .xtream-probe-btn {
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 4px;
+      color: rgba(255,255,255,.7);
+      padding: .3em .6em;
+      font-size: .8em;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .xtream-probe-btn:hover {
+      background: rgba(255,255,255,.15);
+    }
+    .xtream-probe-result {
+      font-size: .8em;
+      line-height: 1.4;
+    }
+    .xtream-probe-result .codec {
+      font-weight: 600;
+    }
+    .xtream-probe-result .compat-good {
+      color: #4caf50;
+    }
+    .xtream-probe-result .compat-warn {
+      color: #ff9800;
+    }
+    .xtream-probe-result .compat-bad {
+      color: #f44336;
+    }
   </style>
   <div data-role="content">
     <div class="content-primary">
@@ -82,6 +112,7 @@
               <tr>
                 <th class="col-num">#</th>
                 <th class="col-name">Name</th>
+                <th class="col-stream">Stream</th>
                 <th class="col-logo">Logo URL</th>
                 <th class="col-tz">EPG Timezone</th>
                 <th class="col-src">EPG Source</th>

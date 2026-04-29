@@ -116,6 +116,74 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     }
 
     /// <summary>
+    /// Probe a live channel to determine its stream properties.
+    /// Returns codec, resolution, framerate, and estimated direct play compatibility.
+    /// </summary>
+    /// <param name="streamId">The Xtream stream ID of the channel.</param>
+    /// <param name="cancellationToken">The cancellation token for cancelling requests.</param>
+    /// <returns>The probe result with stream properties.</returns>
+    [Authorize(Policy = "RequiresElevation")]
+    [HttpGet("ProbeChannel/{streamId}")]
+#pragma warning disable CA3006 // streamId is an int — no injection risk
+    public async Task<ActionResult<ChannelProbeResult>> ProbeChannel(int streamId, CancellationToken cancellationToken)
+    {
+        PluginConfiguration config = Plugin.Instance.Configuration;
+        string url = $"{config.BaseUrl}/{config.Username}/{config.Password}/{streamId}";
+
+        string ffprobePath = GetFfprobePath();
+        string userAgentArg = string.IsNullOrEmpty(config.UserAgent)
+            ? string.Empty
+            : $"-user_agent \"{config.UserAgent}\" ";
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = ffprobePath,
+            Arguments = $"-v quiet -print_format json -show_streams "
+                + $"-analyzeduration 5000000 -probesize 5000000 "
+                + $"{userAgentArg}-i \"{url}\"",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+
+        logger.LogInformation("Probing channel {StreamId}", streamId);
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(15));
+
+            using var process = Process.Start(psi)
+                ?? throw new InvalidOperationException("Failed to start ffprobe");
+
+            string output = await process.StandardOutput.ReadToEndAsync(cts.Token).ConfigureAwait(false);
+
+            await process.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+
+            if (process.ExitCode != 0 || string.IsNullOrWhiteSpace(output))
+            {
+                string stderr = await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+                logger.LogWarning("ffprobe failed for channel {StreamId}: exit={ExitCode}", streamId, process.ExitCode);
+                return Ok(new ChannelProbeResult { Success = false, Error = "Probe failed or timed out" });
+            }
+
+            return Ok(ParseProbeOutput(output));
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning("Probe timed out for channel {StreamId}", streamId);
+            return Ok(new ChannelProbeResult { Success = false, Error = "Probe timed out (15s)" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error probing channel {StreamId}", streamId);
+            return Ok(new ChannelProbeResult { Success = false, Error = ex.Message });
+        }
+    }
+#pragma warning restore CA3006
+
+    /// <summary>
     /// Get all Live TV categories.
     /// </summary>
     /// <param name="cancellationToken">The cancellation token for cancelling requests.</param>
@@ -739,5 +807,112 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     {
         recordingEngine.CancelRecording(timerId);
         return Ok(new { Cancelled = timerId });
+    }
+
+    private static string GetFfprobePath()
+    {
+        string jellyfinFfprobe = "/usr/lib/jellyfin-ffmpeg/ffprobe";
+        if (System.IO.File.Exists(jellyfinFfprobe))
+        {
+            return jellyfinFfprobe;
+        }
+
+        return "ffprobe";
+    }
+
+    private static ChannelProbeResult ParseProbeOutput(string json)
+    {
+        var result = new ChannelProbeResult { Success = true };
+
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("streams", out var streams))
+            {
+                result.Success = false;
+                result.Error = "No streams found";
+                return result;
+            }
+
+            foreach (var stream in streams.EnumerateArray())
+            {
+                string codecType = stream.TryGetProperty("codec_type", out var ct) ? ct.GetString() ?? string.Empty : string.Empty;
+
+                if (codecType == "video" && result.VideoCodec == null)
+                {
+                    result.VideoCodec = stream.TryGetProperty("codec_name", out var cn) ? cn.GetString() : null;
+                    result.Width = stream.TryGetProperty("width", out var w) ? w.GetInt32() : null;
+                    result.Height = stream.TryGetProperty("height", out var h) ? h.GetInt32() : null;
+                    result.Profile = stream.TryGetProperty("profile", out var p) ? p.GetString() : null;
+                    result.Level = stream.TryGetProperty("level", out var l) ? l.GetInt32() : null;
+                    result.Container = stream.TryGetProperty("codec_tag_string", out var tag) ? tag.GetString() : null;
+
+                    // Parse field_order for interlacing
+                    if (stream.TryGetProperty("field_order", out var fo))
+                    {
+                        string fieldOrder = fo.GetString() ?? "progressive";
+                        result.IsInterlaced = fieldOrder != "progressive" && fieldOrder != "unknown";
+                    }
+
+                    // Parse frame rate from r_frame_rate (e.g., "50/1" or "25/1")
+                    if (stream.TryGetProperty("r_frame_rate", out var rfr))
+                    {
+                        string fpsStr = rfr.GetString() ?? string.Empty;
+                        string[] parts = fpsStr.Split('/');
+                        if (parts.Length == 2 &&
+                            double.TryParse(parts[0], out double num) &&
+                            double.TryParse(parts[1], out double den) &&
+                            den > 0)
+                        {
+                            result.FrameRate = Math.Round(num / den, 2);
+                        }
+                    }
+                }
+                else if (codecType == "audio" && result.AudioCodec == null)
+                {
+                    result.AudioCodec = stream.TryGetProperty("codec_name", out var cn) ? cn.GetString() : null;
+                }
+            }
+
+            // Estimate direct play compatibility based on codec/format
+            EstimateDirectPlay(result);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            result.Success = false;
+            result.Error = $"Failed to parse probe output: {ex.Message}";
+        }
+
+        return result;
+    }
+
+    private static void EstimateDirectPlay(ChannelProbeResult probe)
+    {
+        string codec = probe.VideoCodec?.ToLowerInvariant() ?? string.Empty;
+
+        // Native TS-capable clients (ExoPlayer, Tizen, webOS, Xbox)
+        // can direct play H264/H265 in TS container
+        bool isH264 = codec == "h264";
+        bool isH265 = codec is "hevc" or "h265";
+
+        if (isH264 || isH265)
+        {
+            probe.EstimatedDirectPlay.Add("Android TV");
+            probe.EstimatedDirectPlay.Add("Samsung (Tizen)");
+            probe.EstimatedDirectPlay.Add("LG (webOS)");
+            probe.EstimatedDirectPlay.Add("Xbox");
+        }
+
+        // Web browsers never direct play TS — always remux (codec copy)
+        if (isH264 || isH265)
+        {
+            probe.EstimatedDirectPlay.Add("Web (remux copy)");
+        }
+
+        // MPEG2 typically requires transcoding on all modern clients
+        if (codec == "mpeg2video")
+        {
+            probe.EstimatedDirectPlay.Add("Web (transcode)");
+        }
     }
 }

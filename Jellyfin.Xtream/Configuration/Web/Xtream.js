@@ -48,6 +48,41 @@ const createItemRow = (item, state, update) => {
   }
   tr.appendChild(td);
 
+  // Probe button
+  td = document.createElement('td');
+  const probeBtn = document.createElement('button');
+  probeBtn.type = 'button';
+  probeBtn.style.cssText = 'background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:4px;color:rgba(255,255,255,.7);padding:.2em .5em;font-size:.75em;cursor:pointer;';
+  probeBtn.textContent = '🔍';
+  probeBtn.title = 'Probe stream info';
+  probeBtn.onclick = (e) => {
+    e.preventDefault();
+    probeBtn.textContent = '⏳';
+    probeBtn.disabled = true;
+    fetchJson(`Xtream/ProbeChannel/${item.Id}`).then(probe => {
+      td.innerHTML = '';
+      const info = document.createElement('span');
+      info.style.fontSize = '.75em';
+      if (!probe.Success) {
+        info.style.color = '#f44336';
+        info.textContent = `✗ ${probe.Error || 'Failed'}`;
+      } else {
+        const codec = (probe.VideoCodec || '?').toUpperCase();
+        const res = probe.Height ? `${probe.Height}p` : '?';
+        const fps = probe.FrameRate ? Math.round(probe.FrameRate) : '?';
+        const audio = (probe.AudioCodec || '?').toUpperCase();
+        const clients = (probe.EstimatedDirectPlay || []).join(', ') || 'None';
+        const color = probe.VideoCodec === 'mpeg2video' ? '#f44336' : '#4caf50';
+        info.innerHTML = `<span style="color:${color}">${codec} ${res}${fps} ${audio}</span><br><span style="color:rgba(255,255,255,.5);font-size:.9em">${clients}</span>`;
+      }
+      td.appendChild(info);
+    }).catch(() => {
+      td.innerHTML = '<span style="font-size:.75em;color:#f44336">✗ Error</span>';
+    });
+  };
+  td.appendChild(probeBtn);
+  tr.appendChild(td);
+
   return tr;
 }
 

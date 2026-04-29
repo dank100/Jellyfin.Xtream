@@ -138,6 +138,24 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
                 CancellationToken.None,
                 TaskContinuationOptions.None,
                 TaskScheduler.Default);
+
+        // Wait for enough data so Jellyfin's probe can detect video properties (keyframes with SPS/PPS).
+        // Without this, the probe completes in ~2ms with garbage results (Height:0, Level:-99).
+        const int minBytes = 256 * 1024;
+        const int maxWaitMs = 5000;
+        const int pollMs = 50;
+        int waited = 0;
+        while (_buffer.TotalBytesWritten < minBytes && waited < maxWaitMs && !openCancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(pollMs, openCancellationToken).ConfigureAwait(false);
+            waited += pollMs;
+        }
+
+        _logger.LogInformation(
+            "Restream for channel {ChannelId} buffered {Bytes} bytes in {WaitMs}ms before probe.",
+            channelId,
+            _buffer.TotalBytesWritten,
+            waited);
     }
 
     /// <inheritdoc />
