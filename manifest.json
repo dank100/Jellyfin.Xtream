@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix transcoding on iOS/Swiftfin caused by Jellyfin forcing IsInterlaced=true.\n\nJellyfin LiveTvMediaSourceProvider.Normalize() unconditionally sets IsInterlaced=true for all non-default LiveTV video streams. This causes iOS/Swiftfin to add a yadif deinterlacer → full H264→AV1 software transcode at ~0.4x realtime.\n\nFix: MediaSource getter resets IsInterlaced=false each time Jellyfin reads it, undoing the Normalize tampering.\n\nAlso adds 9 unit tests for MediaSourceInfo configuration.\n\nExpected: stream copy on all clients (Android TV, iOS, web) — no more transcoding.",
+        "checksum": "c360943298c9f6b778f17d65e164663e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.57.0/jellyfin-xtream_0.9.57.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-29T19:40:23Z",
+        "version": "0.9.57.0"
+      },
+      {
         "changelog": "Fix transcoding caused by missing codec metadata when probing is disabled.\n\nChanges:\n- Provide H264 High + AAC LC MediaStreams with proper Index values\n- Jellyfin StreamBuilder can now determine direct play/copy is possible\n- Prevents unnecessary H264→HEVC software transcode (was 0.4x realtime)\n\nCombined with v0.9.55.0 (SupportsProbing=false):\n- No probe cycle (no open→close→reopen)\n- AnalyzeDurationMs=500 preserved (not overridden to 3000)\n- Direct play/copy instead of transcode\n- Faster startup (~5s vs ~14s)",
         "checksum": "0fea05b872febae28494d406ba65bdcd",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.56.0/jellyfin-xtream_0.9.56.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T05:07:38Z",
         "version": "0.9.18.0"
-      },
-      {
-        "changelog": "### Changes\n- **Seekable recording channels**: Virtual LiveTV channels now use HLS direct play instead of raw TS pipe. Clients play the m3u8 playlist natively (HLS.js on web, ExoPlayer on Android, AVPlayer on iOS) with full seeking support.\n- **Guide auto-refresh**: Channel list and guide refresh automatically when recordings start and stop. Virtual `● REC:` channels appear within seconds.\n- **CORS fix**: Added Access-Control-Allow-Origin header to HLS segment endpoint.\n- `IsInfiniteStream = false` — clients get a proper seek bar.\n\n### How it works\nThe recording channel MediaSource points directly at the HLS playlist API URL. No IDirectStreamProvider (no raw byte pipe). The client's native HLS player handles seeking across segments.",
-        "checksum": "3e5c2987caccaa8a86af7df7b835d25f",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.17/jellyfin-xtream_0.9.17.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-23T19:31:46Z",
-        "version": "0.9.17.0"
       }
     ]
   }
