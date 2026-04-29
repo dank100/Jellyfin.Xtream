@@ -180,7 +180,7 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
         }
 
         _logger.LogInformation("Opening restream {Count} for channel {ChannelId}.", ConsumerCount, MediaSource.Id);
-        return new WrappedBufferReadStream(_buffer);
+        return new WrappedBufferReadStream(_buffer, seekKeyframe: true);
     }
 
     /// <summary>

@@ -35,49 +35,6 @@ export default function (view) {
     td.appendChild(nameLabel);
     tr.appendChild(td);
 
-    // Stream probe column
-    td = document.createElement('td');
-    const probeBtn = document.createElement('button');
-    probeBtn.type = 'button';
-    probeBtn.className = 'xtream-probe-btn';
-    probeBtn.textContent = 'Probe';
-    probeBtn.onclick = () => {
-      probeBtn.textContent = '...';
-      probeBtn.disabled = true;
-      Xtream.fetchJson(`Xtream/ProbeChannel/${channel.Id}`).then(probe => {
-        td.innerHTML = '';
-        const info = document.createElement('div');
-        info.className = 'xtream-probe-result';
-        if (!probe.Success) {
-          info.innerHTML = `<span class="compat-bad">✗ ${probe.Error || 'Failed'}</span>`;
-        } else {
-          const codec = (probe.VideoCodec || '?').toUpperCase();
-          const res = probe.Height ? `${probe.Height}p` : '?';
-          const fps = probe.FrameRate ? Math.round(probe.FrameRate) : '?';
-          const audio = (probe.AudioCodec || '?').toUpperCase();
-          const interlaced = probe.IsInterlaced ? 'i' : '';
-          // Determine compatibility class
-          let compatClass = 'compat-good';
-          let compatIcon = '✓';
-          if (probe.VideoCodec === 'mpeg2video') {
-            compatClass = 'compat-bad';
-            compatIcon = '✗';
-          } else if (probe.FrameRate > 30 && probe.Height > 720) {
-            compatClass = 'compat-warn';
-            compatIcon = '⚠';
-          }
-          info.innerHTML = `<span class="codec">${codec}</span> ${res}${interlaced}${fps} ${audio}<br>`
-            + `<span class="${compatClass}" title="${(probe.EstimatedDirectPlay || []).join(', ')}">`
-            + `${compatIcon} ${probe.EstimatedDirectPlay?.length || 0} clients</span>`;
-        }
-        td.appendChild(info);
-      }).catch(() => {
-        td.innerHTML = '<span class="compat-bad">✗ Error</span>';
-      });
-    };
-    td.appendChild(probeBtn);
-    tr.appendChild(td);
-
     td = document.createElement('td');
     const image = document.createElement('input');
     image.type = 'text';
