@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Persistent ffmpeg via stdin pipe for multiplexer. Eliminates ~4s per-burst overhead in sequential round-robin mode, improving throughput from ~0.6x to ~1.2x for concurrent streams.",
+        "checksum": "c5637f23dc804c804701ed681b1179c2",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.54.0/jellyfin-xtream_0.9.54.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-29T12:15:10Z",
+        "version": "0.9.54.0"
+      },
+      {
         "changelog": "### Fixes\n- **True direct play**: Set `Container=ts` and `Timestamp=Valid` on live TV MediaSourceInfo — enables Android TV (ExoPlayer) to direct play without ffmpeg remux\n- Previously `Container` was null and `Timestamp` unset, causing StreamBuilder to always choose remux",
         "checksum": "c3c37c4321301181f8c5907c28d87973",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.52.0/jellyfin-xtream_0.9.52.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-23T18:54:52Z",
         "version": "0.9.15.0"
-      },
-      {
-        "changelog": "Fix duplicate library entries and stream termination\n\n- Move growing TS file into hidden .rec_* directory (only .strm visible in library)\n- Clean up orphaned .ts files from previous versions on startup\n- EPG time window in filenames (e.g. Show_20260423_20.00-20.44)",
-        "checksum": "541e183ad3805032318e7e27ce1e30b9",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.14/jellyfin-xtream_0.9.14.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-23T18:34:45Z",
-        "version": "0.9.14.0"
       }
     ]
   }
