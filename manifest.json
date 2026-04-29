@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "### Fixes\n- **True direct play**: Set `Container=ts` and `Timestamp=Valid` on live TV MediaSourceInfo — enables Android TV (ExoPlayer) to direct play without ffmpeg remux\n- Previously `Container` was null and `Timestamp` unset, causing StreamBuilder to always choose remux",
+        "checksum": "c3c37c4321301181f8c5907c28d87973",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.52.0/jellyfin-xtream_0.9.52.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-29T08:38:50Z",
+        "version": "0.9.52.0"
+      },
+      {
         "changelog": "### Fixes\n- **SPS NAL-based keyframe seeking**: Scan for H.264 SPS NAL units (type 7) instead of unreliable RAI flags — many IPTV encoders don't set RAI\n- **2MB pre-buffer** (was 256KB): At 20Mbps, 256KB is only 0.1s — now buffers ~0.8s to reliably capture a keyframe\n- Should eliminate 'non-existing PPS 0 referenced' decode errors at stream start",
         "checksum": "b72147b7d58427f18489b4bc414d920d",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.51.0/jellyfin-xtream_0.9.51.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-23T18:34:45Z",
         "version": "0.9.14.0"
-      },
-      {
-        "changelog": "Growing TS stream endpoint for continuous recording playback\n\n- Recordings now use a .strm file pointing to a growing TS stream endpoint\n- Stream continues growing while watching (no more termination at playback start)\n- Fixed cleanup order and merge-failure handling\n- Improved file drain logic and reduced poll interval\n- Windows compatibility fix (FileShare.Delete)",
-        "checksum": "46a3304cbfabf342ad51f0343177d3dc",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.13/jellyfin-xtream_0.9.13.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-23T18:21:28Z",
-        "version": "0.9.13.0"
       }
     ]
   }
