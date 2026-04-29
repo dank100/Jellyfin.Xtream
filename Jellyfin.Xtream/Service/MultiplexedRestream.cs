@@ -104,12 +104,10 @@ public class MultiplexedRestream : ILiveStream, IDisposable
                     IsDefault = true,
                     PixelFormat = "yuv420p",
                     BitRate = 20_000_000,
-                    RealFrameRate = 50,
-                    AverageFrameRate = 50,
                     AspectRatio = "16:9",
                     IsInterlaced = false,
                     BitDepth = 8,
-                    Level = 42,
+                    Level = 40,
                 },
                 new MediaStream
                 {
