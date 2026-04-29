@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix transcoding caused by missing codec metadata when probing is disabled.\n\nChanges:\n- Provide H264 High + AAC LC MediaStreams with proper Index values\n- Jellyfin StreamBuilder can now determine direct play/copy is possible\n- Prevents unnecessary H264→HEVC software transcode (was 0.4x realtime)\n\nCombined with v0.9.55.0 (SupportsProbing=false):\n- No probe cycle (no open→close→reopen)\n- AnalyzeDurationMs=500 preserved (not overridden to 3000)\n- Direct play/copy instead of transcode\n- Faster startup (~5s vs ~14s)",
+        "checksum": "0fea05b872febae28494d406ba65bdcd",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.56.0/jellyfin-xtream_0.9.56.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-29T16:45:43Z",
+        "version": "0.9.56.0"
+      },
+      {
         "changelog": "Fix Android TV startup error by skipping Jellyfin probe cycle.\n\n- Set SupportsProbing=false → eliminates open→probe→close→reopen cycle\n- Preserves AnalyzeDurationMs=500 (Jellyfin was overriding to 3000)\n- Reduce minSegments from 3 to 2\n- Faster poll interval (200ms vs 500ms)\n\nExpected: ~5s faster startup, no more error toast on Android TV.",
         "checksum": "db7ae6bad4b016049b1e4ba0869012b8",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.55.0/jellyfin-xtream_0.9.55.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-23T19:31:46Z",
         "version": "0.9.17.0"
-      },
-      {
-        "changelog": "Fix: Recording streams now start from the beginning of the file instead of jumping to the live edge.\n\nChanged `EnableStreamSharing` to `false` so each consumer gets their own independent `TailingFileStream` starting from byte 0.",
-        "checksum": "a4b654e13fa200e53e4555fa10da3807",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.16/jellyfin-xtream_0.9.16.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-23T19:09:52Z",
-        "version": "0.9.16.0"
       }
     ]
   }
