@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.9.52.0"
+version: "0.9.53.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -12,7 +12,9 @@ owner: "Kevinjil"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  Direct play fix: set Container="ts" and Timestamp=Valid on live TV
-  MediaSourceInfo so Jellyfin StreamBuilder can match Android TV device
-  profile for true direct play (no ffmpeg remux). Previously Container
-  was null and Timestamp unset, forcing remux for all clients.
+  Faster stream startup: (1) Multiplexer grace period keeps capture
+  running 15 seconds after last viewer disconnects, so the
+  open-probe-close-reopen cycle reuses existing segments instantly.
+  (2) Reduced AnalyzeDurationMs from 3000 to 500 for live streams —
+  pre-buffered data makes a 3-second probe unnecessary. Together these
+  should eliminate the brief error Android TV shows before playback.

@@ -445,6 +445,7 @@ public partial class StreamService(IXtreamClient xtreamClient)
             Protocol = MediaProtocol.Http,
             RequiresClosing = restream,
             RequiresOpening = restream,
+            AnalyzeDurationMs = isLive ? 500 : null,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsProbing = true,

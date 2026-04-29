@@ -72,6 +72,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             EncoderPath = baseUrl + hlsPath,
             Protocol = MediaProtocol.Http,
             Container = "ts",
+            AnalyzeDurationMs = 500,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsTranscoding = true,

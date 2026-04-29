@@ -36,11 +36,18 @@ namespace Jellyfin.Xtream.Service;
 /// </summary>
 public sealed class ConnectionMultiplexer : IHostedService, IDisposable
 {
+    /// <summary>
+    /// Grace period in seconds before cleaning up after the last subscriber leaves.
+    /// Allows Jellyfin's probe-then-play cycle to reuse the existing buffer.
+    /// </summary>
+    private const int GracePeriodSeconds = 15;
+
     private readonly ILogger<ConnectionMultiplexer> _logger;
     private readonly IServerConfigurationManager _config;
     private readonly IXtreamClient _xtreamClient;
     private readonly ConcurrentDictionary<int, ChannelBuffer> _channels = new();
     private readonly ConcurrentDictionary<int, (Task Task, CancellationTokenSource Cts)> _parallelCaptures = new();
+    private readonly ConcurrentDictionary<int, CancellationTokenSource> _gracePeriodTimers = new();
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private bool _disposed;
@@ -83,6 +90,14 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
     /// <returns>The channel buffer.</returns>
     public ChannelBuffer Subscribe(int streamId, bool isLive = false)
     {
+        // Cancel any pending grace-period cleanup for this channel.
+        if (_gracePeriodTimers.TryRemove(streamId, out var graceCts))
+        {
+            graceCts.Cancel();
+            graceCts.Dispose();
+            _logger.LogInformation("Cancelled grace period cleanup for stream {StreamId} (re-subscribed)", streamId);
+        }
+
         var buffer = _channels.GetOrAdd(streamId, id =>
         {
             _logger.LogInformation("Creating multiplexer buffer for stream {StreamId}", id);
@@ -136,17 +151,51 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         if (buffer.SubscriberCount <= 0)
         {
             buffer.SubscriberCount = 0;
-            buffer.State = ChannelBufferState.Idle;
 
-            // Stop any parallel capture running for this channel.
-            StopParallelCapture(streamId);
-
-            if (_channels.TryRemove(streamId, out var removed))
+            // Start a grace period instead of immediately cleaning up.
+            // Jellyfin's live TV pipeline probes then reopens streams, so
+            // keeping the capture alive avoids a 3+ second delay on the retry.
+            var graceCts = new CancellationTokenSource();
+            if (_gracePeriodTimers.TryAdd(streamId, graceCts))
             {
-                removed.Dispose();
-                _logger.LogInformation("Removed idle buffer for stream {StreamId}", streamId);
+                _logger.LogInformation(
+                    "Starting {Seconds}s grace period for stream {StreamId}",
+                    GracePeriodSeconds,
+                    streamId);
+                _ = RunGracePeriodCleanupAsync(streamId, graceCts.Token);
             }
         }
+    }
+
+    private async Task RunGracePeriodCleanupAsync(int streamId, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(GracePeriodSeconds), ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // A new subscriber arrived during the grace period — keep the buffer.
+            return;
+        }
+
+        // Grace period expired with no new subscribers — clean up.
+        if (!_channels.TryGetValue(streamId, out var buffer) || buffer.SubscriberCount > 0)
+        {
+            return;
+        }
+
+        _logger.LogInformation("Grace period expired for stream {StreamId}, cleaning up", streamId);
+        buffer.State = ChannelBufferState.Idle;
+        StopParallelCapture(streamId);
+
+        if (_channels.TryRemove(streamId, out var removed))
+        {
+            removed.Dispose();
+            _logger.LogInformation("Removed idle buffer for stream {StreamId}", streamId);
+        }
+
+        _gracePeriodTimers.TryRemove(streamId, out _);
     }
 
     /// <summary>
@@ -189,6 +238,15 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
             }
         }
 
+        // Cancel all pending grace-period timers.
+        foreach (var kvp in _gracePeriodTimers)
+        {
+            await kvp.Value.CancelAsync().ConfigureAwait(false);
+            kvp.Value.Dispose();
+        }
+
+        _gracePeriodTimers.Clear();
+
         // Stop all parallel captures
         StopAllParallelCaptures();
 
@@ -210,6 +268,18 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         }
 
         _disposed = true;
+
+        // Cancel all pending grace-period timers.
+        foreach (var kvp in _gracePeriodTimers)
+        {
+#pragma warning disable CA1849 // Dispose is synchronous; CancelAsync not available here
+            kvp.Value.Cancel();
+#pragma warning restore CA1849
+            kvp.Value.Dispose();
+        }
+
+        _gracePeriodTimers.Clear();
+
         StopAllParallelCaptures();
         _cts?.Dispose();
 
@@ -296,10 +366,11 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                     }
                 }
 
-                // Stop captures for channels that are no longer active.
+                // Stop captures for channels that are no longer active
+                // (but not those in a grace period — they'll be cleaned up later).
                 foreach (var sid in _parallelCaptures.Keys.ToList())
                 {
-                    if (!activeIds.Contains(sid))
+                    if (!activeIds.Contains(sid) && !_gracePeriodTimers.ContainsKey(sid))
                     {
                         StopParallelCapture(sid);
                     }
