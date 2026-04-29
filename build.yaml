@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.9.51.0"
+version: "0.9.52.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -12,7 +12,7 @@ owner: "Kevinjil"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  SPS NAL-based keyframe seeking: scan buffer for H.264 SPS NAL units
-  (type 7) instead of unreliable RAI flags. Increased pre-buffer to 2MB
-  to ensure at least one keyframe is captured before serving. Eliminates
-  "non-existing PPS 0 referenced" decode errors at stream start.
+  Direct play fix: set Container="ts" and Timestamp=Valid on live TV
+  MediaSourceInfo so Jellyfin StreamBuilder can match Android TV device
+  profile for true direct play (no ffmpeg remux). Previously Container
+  was null and Timestamp unset, forcing remux for all clients.

@@ -402,7 +402,7 @@ public partial class StreamService(IXtreamClient xtreamClient)
         bool isLive = type == StreamType.Live;
         return new MediaSourceInfo()
         {
-            Container = extension,
+            Container = extension ?? (isLive ? "ts" : null),
             EncoderProtocol = MediaProtocol.Http,
             Id = ToGuid(MediaSourcePrefix, (int)type, id, 0).ToString(),
             IsInfiniteStream = isLive,
@@ -448,6 +448,7 @@ public partial class StreamService(IXtreamClient xtreamClient)
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsProbing = true,
+            Timestamp = isLive ? TransportStreamTimestamp.Valid : null,
         };
     }
 
