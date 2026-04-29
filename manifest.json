@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "### Fixes\n- **SPS NAL-based keyframe seeking**: Scan for H.264 SPS NAL units (type 7) instead of unreliable RAI flags — many IPTV encoders don't set RAI\n- **2MB pre-buffer** (was 256KB): At 20Mbps, 256KB is only 0.1s — now buffers ~0.8s to reliably capture a keyframe\n- Should eliminate 'non-existing PPS 0 referenced' decode errors at stream start",
+        "checksum": "b72147b7d58427f18489b4bc414d920d",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.51.0/jellyfin-xtream_0.9.51.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-04-29T08:24:48Z",
+        "version": "0.9.51.0"
+      },
+      {
         "changelog": "### Fixes\n- **Keyframe-aligned stream start**: Scan buffer for MPEG-TS RAI flag before serving — eliminates ~140 'non-existing PPS 0 referenced' decode errors at stream start\n- **Channel probe on Live TV selection** (removed from TV Overrides page)\n- **Pre-buffer 256KB** for reliable stream probing on Android TV",
         "checksum": "ff5a472d49cbb36163226107d6975aa3",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.50.0/jellyfin-xtream_0.9.50.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-23T18:21:28Z",
         "version": "0.9.13.0"
-      },
-      {
-        "changelog": "## Changes\n\n- **Fix**: Drop .strm approach (caused Jellyfin to transcode HLS→AV1, breaking web)\n- **Dual output**: ffmpeg writes both .ts file (library) + HLS segments (API) simultaneously\n- .ts file = Jellyfin serves directly → works on all clients (iPhone, Android TV, web)\n- HLS API = seekable growing playback at `/Xtream/Recordings/{timerId}/stream.m3u8`\n- After recording: merges HLS→MKV, deletes .ts and segments\n\n## Playback during recording\n- **From Jellyfin library**: plays the growing .ts file (all clients)\n- **Via HLS API**: seekable, continuously growing stream",
-        "checksum": "0662d440fe601f8c32e04716de76ea77",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.12/jellyfin-xtream_0.9.12.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-23T18:03:12Z",
-        "version": "0.9.12.0"
       }
     ]
   }
