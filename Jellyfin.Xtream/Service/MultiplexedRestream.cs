@@ -71,6 +71,11 @@ public class MultiplexedRestream : ILiveStream, IDisposable
         // adds ~3-4s to startup — enough to trigger an Android TV error toast.
         // With SupportsProbing=false, Jellyfin uses AddMediaInfo() which
         // preserves our AnalyzeDurationMs and skips the extra round-trip.
+        //
+        // We must provide MediaStreams with valid codecs and Index >= 0 so
+        // Jellyfin's StreamBuilder can determine that direct play / stream
+        // copy is possible.  Without codec info it falls back to full
+        // software transcode (H264→HEVC at ~0.4x realtime).
         MediaSource = new MediaSourceInfo
         {
             Id = $"multiplex_{streamId}",
@@ -85,6 +90,39 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             IsInfiniteStream = true,
             SupportsProbing = false,
             IsRemote = false,
+            MediaStreams = new List<MediaStream>
+            {
+                new MediaStream
+                {
+                    Type = MediaStreamType.Video,
+                    Index = 0,
+                    Codec = "h264",
+                    Profile = "High",
+                    Width = 1920,
+                    Height = 1080,
+                    IsDefault = true,
+                    PixelFormat = "yuv420p",
+                    BitRate = 20_000_000,
+                    RealFrameRate = 50,
+                    AverageFrameRate = 50,
+                    AspectRatio = "16:9",
+                    IsInterlaced = false,
+                    BitDepth = 8,
+                    Level = 42,
+                },
+                new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Index = 1,
+                    Codec = "aac",
+                    Profile = "LC",
+                    Channels = 2,
+                    ChannelLayout = "stereo",
+                    SampleRate = 48000,
+                    IsDefault = true,
+                    BitRate = 128000,
+                },
+            },
         };
 
         OriginalStreamId = MediaSource.Id;
