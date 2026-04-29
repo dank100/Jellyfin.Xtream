@@ -139,10 +139,11 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
                 TaskContinuationOptions.None,
                 TaskScheduler.Default);
 
-        // Wait for enough data so Jellyfin's probe can detect video properties (keyframes with SPS/PPS).
-        // Without this, the probe completes in ~2ms with garbage results (Height:0, Level:-99).
-        const int minBytes = 256 * 1024;
-        const int maxWaitMs = 5000;
+        // Wait for enough data to contain at least one keyframe with SPS/PPS NAL units.
+        // At 20Mbps, keyframes are typically 2-5 seconds apart = 5-12MB. We need at least
+        // one keyframe so both Jellyfin's probe and the SPS-seeking read stream work correctly.
+        const int minBytes = 2 * 1024 * 1024;
+        const int maxWaitMs = 8000;
         const int pollMs = 50;
         int waited = 0;
         while (_buffer.TotalBytesWritten < minBytes && waited < maxWaitMs && !openCancellationToken.IsCancellationRequested)

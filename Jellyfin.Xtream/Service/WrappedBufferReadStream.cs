@@ -144,21 +144,29 @@ public class WrappedBufferReadStream : Stream
     }
 
     /// <summary>
-    /// Scans the circular buffer for the first MPEG-TS packet with the Random Access Indicator (RAI)
-    /// flag set, starting from <paramref name="startPos"/>. TS packets with RAI mark keyframes that
-    /// contain SPS/PPS NAL units, ensuring decoders can start cleanly without "non-existing PPS" errors.
+    /// Reads a byte from the circular buffer at the given virtual position.
+    /// </summary>
+    private static byte ReadByte(WrappedBufferStream source, long pos)
+    {
+        return source.Buffer[(int)(pos % source.BufferSize)];
+    }
+
+    /// <summary>
+    /// Scans the circular buffer for the first MPEG-TS packet containing an H.264 SPS NAL unit
+    /// (NAL type 7). SPS NAL units are emitted at keyframe (IDR) boundaries and contain the
+    /// parameter sets needed for clean decoder initialization. Starting playback from the TS
+    /// packet containing SPS eliminates "non-existing PPS 0 referenced" errors.
     /// </summary>
     /// <param name="startPos">The virtual byte position to start scanning from.</param>
     /// <param name="source">The source buffer to scan.</param>
-    /// <returns>The virtual byte position of the first RAI-flagged TS packet, or -1 if not found.</returns>
+    /// <returns>The virtual byte position of the TS packet containing SPS, or -1 if not found.</returns>
     private static long FindKeyframePosition(long startPos, WrappedBufferStream source)
     {
         const int tsPacketSize = 188;
         const byte syncByte = 0x47;
         long available = source.TotalBytesWritten - startPos;
 
-        // Need at least 6 bytes to check: sync + 2 header + flags + adaptation_length + adaptation_flags.
-        if (available < tsPacketSize)
+        if (available < tsPacketSize * 2)
         {
             return -1;
         }
@@ -170,19 +178,13 @@ public class WrappedBufferReadStream : Stream
 
         while (pos < end)
         {
-            int idx = (int)(pos % source.BufferSize);
-            if (source.Buffer[idx] == syncByte)
+            if (ReadByte(source, pos) == syncByte)
             {
-                // Verify sync at +188 to confirm alignment.
                 long nextPos = pos + tsPacketSize;
-                if (nextPos < source.TotalBytesWritten)
+                if (nextPos < source.TotalBytesWritten && ReadByte(source, nextPos) == syncByte)
                 {
-                    int nextIdx = (int)(nextPos % source.BufferSize);
-                    if (source.Buffer[nextIdx] == syncByte)
-                    {
-                        syncPos = pos;
-                        break;
-                    }
+                    syncPos = pos;
+                    break;
                 }
             }
 
@@ -194,34 +196,28 @@ public class WrappedBufferReadStream : Stream
             return -1;
         }
 
-        // Scan TS packets for RAI flag.
+        // Scan TS packets for H.264 SPS NAL unit (type 7).
+        // SPS appears as: 0x00 0x00 0x01 <NAL> where (NAL & 0x1F) == 7, or
+        //                  0x00 0x00 0x00 0x01 <NAL> where (NAL & 0x1F) == 7.
         pos = syncPos;
-        while (pos + 6 <= source.TotalBytesWritten)
+        while (pos + tsPacketSize <= source.TotalBytesWritten)
         {
-            int bufSize = source.BufferSize;
-            int i0 = (int)(pos % bufSize);
-
-            if (source.Buffer[i0] != syncByte)
+            if (ReadByte(source, pos) != syncByte)
             {
                 break; // Lost sync.
             }
 
-            // Byte 3: adaptation_field_control is bits 5-4.
-            int i3 = (int)((pos + 3) % bufSize);
-            byte flags3 = source.Buffer[i3];
-            bool hasAdaptation = (flags3 & 0x20) != 0;
-
-            if (hasAdaptation)
+            // Scan the payload of this TS packet for an SPS NAL start code.
+            long pktEnd = Math.Min(pos + tsPacketSize, source.TotalBytesWritten);
+            for (long j = pos + 1; j + 3 < pktEnd; j++)
             {
-                // Byte 4: adaptation_field_length.
-                int i4 = (int)((pos + 4) % bufSize);
-                byte adaptLen = source.Buffer[i4];
-
-                if (adaptLen > 0)
+                // Check for 3-byte start code: 0x00 0x00 0x01 <NAL>.
+                if (ReadByte(source, j) == 0x00 &&
+                    ReadByte(source, j + 1) == 0x00 &&
+                    ReadByte(source, j + 2) == 0x01)
                 {
-                    // Byte 5: adaptation flags, bit 6 = random_access_indicator.
-                    int i5 = (int)((pos + 5) % bufSize);
-                    if ((source.Buffer[i5] & 0x40) != 0)
+                    byte nalType = (byte)(ReadByte(source, j + 3) & 0x1F);
+                    if (nalType == 7) // SPS
                     {
                         return pos;
                     }
