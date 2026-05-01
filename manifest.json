@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Two changes to eliminate iOS transcoding:\n1. SupportsTranscoding=false — forces DirectStream/DirectPlay\n2. Container=\"mp4\" — matches iOS DirectPlayProfile (was \"ts\" which iOS profiles likely exclude)\n\nCombined with earlier fixes (IsInterlaced=false, SupportsDirectStream=true), this should finally force stream copy on all clients.",
+        "checksum": "e09877ede53086fe1e159c973f028ce4",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.61.0/jellyfin-xtream_0.9.61.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-01T17:05:28Z",
+        "version": "0.9.61.0"
+      },
+      {
         "changelog": "Force stream copy on all clients by disabling transcoding.\n\nSwiftfin device profile has conditions that reject H264 for stream copy, forcing H264→AV1 transcode at 0.8x speed (unusable). With SupportsTranscoding=false, the StreamBuilder must choose DirectStream (codec copy) or DirectPlay. H264 via HLS is natively supported on all iOS devices.",
         "checksum": "ec3feda665d54359023229fd1937cf5e",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.60.0/jellyfin-xtream_0.9.60.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T05:49:13Z",
         "version": "0.9.22.0"
-      },
-      {
-        "changelog": "## Recording channels: start from beginning + full seekbar\n\nSwitched from HTTP HLS URL to local TS file for recording channel playback:\n\n- **Starts from the beginning** — ffmpeg reads the TS file from byte 0\n- **Full EPG timeslot in seekbar** — `RunTimeTicks` set to scheduled duration (with padding)\n- **Seeking works** — ffmpeg can use `-ss` on the local file when you scrub the timeline",
-        "checksum": "add6fc95d287e67a7e33281b74ebe3f7",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.21.0/jellyfin-xtream_0.9.21.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T05:40:37Z",
-        "version": "0.9.21.0"
       }
     ]
   }
