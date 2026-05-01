@@ -212,7 +212,7 @@ public class MultiplexedRestreamTests
         Assert.Equal(10000, source.AnalyzeDurationMs);
         Assert.True(source.SupportsDirectPlay);
         Assert.True(source.IsInfiniteStream);
-        Assert.Equal("mp4", source.Container);
+        Assert.Equal("ts", source.Container);
 
         // Transcoding must be disabled to force stream copy
         Assert.False(source.SupportsTranscoding, "Transcoding must be disabled");
