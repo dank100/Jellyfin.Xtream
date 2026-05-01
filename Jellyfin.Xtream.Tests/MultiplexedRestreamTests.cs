@@ -39,7 +39,7 @@ public class MultiplexedRestreamTests
         var appHost = new Mock<IServerApplicationHost>();
         appHost.Setup(a => a.GetSmartApiUrl(It.IsAny<IPAddress>()))
                .Returns("http://localhost:8096");
-        appHost.Setup(a => a.GetApiUrlForLocalAccess())
+        appHost.Setup(a => a.GetApiUrlForLocalAccess(It.IsAny<IPAddress>(), It.IsAny<bool>()))
                .Returns("http://localhost:8096");
 
         var logger = new Mock<ILogger>();
