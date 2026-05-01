@@ -87,7 +87,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             AnalyzeDurationMs = 10000,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
-            SupportsTranscoding = false,
+            SupportsTranscoding = true,
             IsInfiniteStream = true,
             SupportsProbing = false,
             IsRemote = false,
@@ -113,7 +113,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
                 {
                     Type = MediaStreamType.Audio,
                     Index = 1,
-                    Codec = "aac",
+                    Codec = "eac3",
                     Profile = "LC",
                     Channels = 2,
                     ChannelLayout = "stereo",
@@ -155,9 +155,9 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             if (_mediaSource is not null)
             {
                 // Jellyfin's Normalize() overrides these for live TV sources.
-                // Reset them to ensure stream copy (no transcoding) on all clients.
+                // Reset them to ensure the HLS remux path is available.
                 _mediaSource.SupportsDirectStream = true;
-                _mediaSource.SupportsTranscoding = false;
+                _mediaSource.SupportsTranscoding = true;
 
                 if (_mediaSource.MediaStreams is not null)
                 {

@@ -111,14 +111,14 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_HasAudioStream_WithAacCodec()
+    public void MediaSource_HasAudioStream_WithEac3Codec()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
         var audio = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio);
 
         Assert.NotNull(audio);
-        Assert.Equal("aac", audio.Codec);
+        Assert.Equal("eac3", audio.Codec);
         Assert.Equal("LC", audio.Profile);
         Assert.True(audio.Index >= 0, "Audio stream Index must be >= 0 for Jellyfin to skip probing");
         Assert.Equal(2, audio.Channels);
@@ -214,8 +214,8 @@ public class MultiplexedRestreamTests
         Assert.True(source.IsInfiniteStream);
         Assert.Equal("ts", source.Container);
 
-        // Transcoding must be disabled to force stream copy
-        Assert.False(source.SupportsTranscoding, "Transcoding must be disabled");
+        // Transcoding must be enabled so web player can use HLS remux path
+        Assert.True(source.SupportsTranscoding, "Transcoding must be enabled for HLS remux");
         Assert.True(source.SupportsDirectStream, "DirectStream must be enabled");
 
         // Video stream — must enable stream copy
@@ -229,7 +229,7 @@ public class MultiplexedRestreamTests
 
         // Audio stream — must enable stream copy
         var audio = source.MediaStreams.First(s => s.Type == MediaStreamType.Audio);
-        Assert.Equal("aac", audio.Codec);
+        Assert.Equal("eac3", audio.Codec);
         Assert.Equal(1, audio.Index);
         Assert.NotNull(audio.Channels);
         Assert.NotNull(audio.SampleRate);
