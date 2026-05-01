@@ -13,11 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-using System.Linq;
 using System.Net;
 using MediaBrowser.Controller;
-using MediaBrowser.Model.Dto;
-using MediaBrowser.Model.Entities;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.MediaInfo;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -26,8 +25,8 @@ namespace Jellyfin.Xtream.Tests;
 
 /// <summary>
 /// Tests that <see cref="Service.MultiplexedRestream"/> produces a
-/// <see cref="MediaSourceInfo"/> that avoids unnecessary transcoding
-/// on all major Jellyfin clients (Android TV, iOS/Swiftfin, web).
+/// correct <see cref="MediaSourceInfo"/> and implements the standard
+/// LiveTV stream path for proper AAC bitstream filter handling.
 /// </summary>
 public class MultiplexedRestreamTests
 {
@@ -40,11 +39,11 @@ public class MultiplexedRestreamTests
         var appHost = new Mock<IServerApplicationHost>();
         appHost.Setup(a => a.GetSmartApiUrl(It.IsAny<IPAddress>()))
                .Returns("http://localhost:8096");
+        appHost.Setup(a => a.GetApiUrlForLocalAccess())
+               .Returns("http://localhost:8096");
 
         var logger = new Mock<ILogger>();
 
-        // MultiplexedRestream only uses the multiplexer in Open/Close,
-        // which we don't call in these tests, so null is safe.
         return new Service.MultiplexedRestream(
             appHost.Object,
             logger.Object,
@@ -52,190 +51,114 @@ public class MultiplexedRestreamTests
             streamId);
     }
 
-    /// <summary>
-    /// Simulates Jellyfin's LiveTvMediaSourceProvider.Normalize() method which
-    /// unconditionally sets IsInterlaced=true and NalLengthSize="0" for all video
-    /// streams from non-default LiveTV services. This is the exact behavior from
-    /// Jellyfin 10.11.x (src/Jellyfin.LiveTv/LiveTvMediaSourceProvider.cs:249-253).
-    /// </summary>
-    private static void SimulateJellyfinNormalize(MediaSourceInfo mediaSource)
-    {
-        // Jellyfin forces SupportsTranscoding for non-default services
-        mediaSource.SupportsTranscoding = true;
-
-        foreach (var stream in mediaSource.MediaStreams)
-        {
-            if (stream.Type == MediaStreamType.Video && string.IsNullOrWhiteSpace(stream.NalLengthSize))
-            {
-                stream.NalLengthSize = "0";
-            }
-
-            if (stream.Type == MediaStreamType.Video)
-            {
-                stream.IsInterlaced = true;
-            }
-        }
-    }
-
     [Fact]
-    public void MediaSource_ProbingDisabled_AvoidsProbeCycle()
-    {
-        var restream = CreateRestream();
-        var source = restream.MediaSource;
-
-        Assert.False(source.SupportsProbing, "SupportsProbing should be false to skip the probe→close→reopen cycle");
-    }
-
-    [Fact]
-    public void MediaSource_AnalyzeDuration_Is10000ms()
-    {
-        var restream = CreateRestream();
-        var source = restream.MediaSource;
-
-        Assert.Equal(10000, source.AnalyzeDurationMs);
-    }
-
-    [Fact]
-    public void MediaSource_HasVideoStream_WithH264Codec()
-    {
-        var restream = CreateRestream();
-        var source = restream.MediaSource;
-        var video = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
-
-        Assert.NotNull(video);
-        Assert.Equal("h264", video.Codec);
-        Assert.Equal("High", video.Profile);
-        Assert.True(video.Index >= 0, "Video stream Index must be >= 0 for Jellyfin to skip probing");
-        Assert.Equal(1920, video.Width);
-        Assert.Equal(1080, video.Height);
-    }
-
-    [Fact]
-    public void MediaSource_HasAudioStream_WithEac3Codec()
-    {
-        var restream = CreateRestream();
-        var source = restream.MediaSource;
-        var audio = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio);
-
-        Assert.NotNull(audio);
-        Assert.Equal("eac3", audio.Codec);
-        Assert.Equal("LC", audio.Profile);
-        Assert.True(audio.Index >= 0, "Audio stream Index must be >= 0 for Jellyfin to skip probing");
-        Assert.Equal(2, audio.Channels);
-        Assert.Equal(48000, audio.SampleRate);
-    }
-
-    [Fact]
-    public void MediaSource_SupportsDirectPlay()
-    {
-        var restream = CreateRestream();
-        var source = restream.MediaSource;
-
-        Assert.True(source.SupportsDirectPlay, "Direct play must be enabled to avoid transcoding");
-    }
-
-    [Fact]
-    public void MediaSource_VideoIsProgressive_NotInterlaced()
-    {
-        var restream = CreateRestream();
-        var source = restream.MediaSource;
-        var video = source.MediaStreams.First(s => s.Type == MediaStreamType.Video);
-
-        Assert.False(video.IsInterlaced, "Video must not be interlaced — interlaced triggers yadif deinterlacer and forces transcoding");
-    }
-
-    /// <summary>
-    /// Jellyfin's LiveTvMediaSourceProvider.Normalize() unconditionally sets
-    /// IsInterlaced=true for all video streams from non-default LiveTV services.
-    /// Our MediaSource getter must undo this so that clients don't add a yadif
-    /// deinterlacer (which forces full video transcoding on iOS/Swiftfin).
-    /// This test simulates the exact Jellyfin Normalize behavior and verifies
-    /// that reading MediaSource afterwards resets IsInterlaced to false.
-    /// </summary>
-    [Fact]
-    public void MediaSource_ResetsInterlaced_AfterJellyfinNormalize()
-    {
-        var restream = CreateRestream();
-
-        // Step 1: Jellyfin reads MediaSource (e.g. in GetChannelStream)
-        var source = restream.MediaSource;
-        var video = source.MediaStreams.First(s => s.Type == MediaStreamType.Video);
-        Assert.False(video.IsInterlaced, "Before Normalize: should be progressive");
-
-        // Step 2: Jellyfin's Normalize() runs and forces IsInterlaced=true
-        SimulateJellyfinNormalize(source);
-        Assert.True(video.IsInterlaced, "After Normalize: Jellyfin forced interlaced=true");
-
-        // Step 3: Jellyfin reads MediaSource again (in OpenLiveStreamInternal)
-        // Our getter must reset IsInterlaced back to false
-        var sourceAfter = restream.MediaSource;
-        var videoAfter = sourceAfter.MediaStreams.First(s => s.Type == MediaStreamType.Video);
-        Assert.False(videoAfter.IsInterlaced, "After re-read: getter must reset interlaced to false to prevent transcoding");
-    }
-
-    /// <summary>
-    /// Multiple consecutive reads of MediaSource should always return progressive video.
-    /// This guards against race conditions or state corruption.
-    /// </summary>
-    [Fact]
-    public void MediaSource_AlwaysProgressive_AcrossMultipleReads()
-    {
-        var restream = CreateRestream();
-
-        for (int i = 0; i < 5; i++)
-        {
-            // Simulate Normalize tampering before each read
-            SimulateJellyfinNormalize(restream.MediaSource);
-
-            var source = restream.MediaSource;
-            var video = source.MediaStreams.First(s => s.Type == MediaStreamType.Video);
-            Assert.False(video.IsInterlaced, $"Read {i}: video should always be progressive");
-        }
-    }
-
-    /// <summary>
-    /// Verifies the complete MediaSourceInfo configuration that clients use
-    /// to decide between direct play vs transcode. All properties must be set
-    /// correctly to avoid transcoding on Android TV, iOS, and web clients.
-    /// </summary>
-    [Fact]
-    public void MediaSource_FullConfiguration_EnablesStreamCopy()
+    public void MediaSource_UsesStandardLiveTvPath()
     {
         var restream = CreateRestream(streamId: 42);
-
-        // Simulate the full Jellyfin flow: Normalize → re-read
-        SimulateJellyfinNormalize(restream.MediaSource);
         var source = restream.MediaSource;
 
-        // Core properties for avoiding transcoding
-        Assert.False(source.SupportsProbing, "Probing must be disabled");
-        Assert.Equal(10000, source.AnalyzeDurationMs);
-        Assert.True(source.SupportsDirectPlay);
-        Assert.True(source.IsInfiniteStream);
+        Assert.Contains("/LiveTv/LiveStreamFiles/", source.Path);
+        Assert.EndsWith("/stream.ts", source.Path);
+        Assert.Contains("/LiveTv/LiveStreamFiles/", source.EncoderPath);
+        Assert.EndsWith("/stream.ts", source.EncoderPath);
+    }
+
+    [Fact]
+    public void MediaSource_ContainerIsTs()
+    {
+        var restream = CreateRestream();
+        var source = restream.MediaSource;
+
         Assert.Equal("ts", source.Container);
+    }
 
-        // Transcoding must be enabled so web player can use HLS remux path
-        Assert.True(source.SupportsTranscoding, "Transcoding must be enabled for HLS remux");
-        // DirectStream must be disabled — it copies audio to MP4 without BSF
-        Assert.False(source.SupportsDirectStream, "DirectStream must be disabled");
+    [Fact]
+    public void MediaSource_ProbingEnabled()
+    {
+        var restream = CreateRestream();
+        var source = restream.MediaSource;
 
-        // Video stream — must enable stream copy
-        var video = source.MediaStreams.First(s => s.Type == MediaStreamType.Video);
-        Assert.Equal("h264", video.Codec);
-        Assert.False(video.IsInterlaced, "Interlaced causes yadif → transcode");
-        Assert.Equal(0, video.Index);
-        Assert.NotNull(video.Width);
-        Assert.NotNull(video.Height);
-        Assert.NotNull(video.BitRate);
+        Assert.True(source.SupportsProbing, "SupportsProbing must be true so Jellyfin discovers actual codecs");
+    }
 
-        // Audio stream — must enable stream copy
-        var audio = source.MediaStreams.First(s => s.Type == MediaStreamType.Audio);
-        Assert.Equal("eac3", audio.Codec);
-        Assert.Equal(1, audio.Index);
-        Assert.NotNull(audio.Channels);
-        Assert.NotNull(audio.SampleRate);
+    [Fact]
+    public void MediaSource_AllPlaybackPathsEnabled()
+    {
+        var restream = CreateRestream();
+        var source = restream.MediaSource;
 
-        // Path should point to our HLS endpoint
-        Assert.Contains("/Xtream/Multiplex/42/playlist.m3u8", source.Path);
+        Assert.True(source.SupportsDirectPlay);
+        Assert.True(source.SupportsDirectStream);
+        Assert.True(source.SupportsTranscoding);
+    }
+
+    [Fact]
+    public void MediaSource_IsInfiniteStream()
+    {
+        var restream = CreateRestream();
+        var source = restream.MediaSource;
+
+        Assert.True(source.IsInfiniteStream);
+    }
+
+    [Fact]
+    public void MediaSource_ProtocolIsHttp()
+    {
+        var restream = CreateRestream();
+        var source = restream.MediaSource;
+
+        Assert.Equal(MediaProtocol.Http, source.Protocol);
+    }
+
+    [Fact]
+    public void MediaSource_IdContainsStreamId()
+    {
+        var restream = CreateRestream(streamId: 777);
+        var source = restream.MediaSource;
+
+        Assert.Equal("multiplex_777", source.Id);
+    }
+
+    [Fact]
+    public void MediaSource_IsNotRemote()
+    {
+        var restream = CreateRestream();
+        var source = restream.MediaSource;
+
+        Assert.False(source.IsRemote);
+    }
+
+    [Fact]
+    public void ImplementsIDirectStreamProvider()
+    {
+        var restream = CreateRestream();
+
+        Assert.IsAssignableFrom<IDirectStreamProvider>(restream);
+    }
+
+    [Fact]
+    public void TunerHostId_IsCorrect()
+    {
+        var restream = CreateRestream();
+
+        Assert.Equal("Xtream-Multiplex", restream.TunerHostId);
+    }
+
+    [Fact]
+    public void EnableStreamSharing_IsTrue()
+    {
+        var restream = CreateRestream();
+
+        Assert.True(restream.EnableStreamSharing);
+    }
+
+    [Fact]
+    public void GetStream_WithNoBuffer_ReturnsNullStream()
+    {
+        var restream = CreateRestream();
+
+        // Multiplexer is null in test, GetBuffer returns null
+        var stream = restream.GetStream();
+        Assert.Same(System.IO.Stream.Null, stream);
     }
 }
