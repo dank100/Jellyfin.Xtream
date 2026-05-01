@@ -87,7 +87,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             AnalyzeDurationMs = 500,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
-            SupportsTranscoding = true,
+            SupportsTranscoding = false,
             IsInfiniteStream = true,
             SupportsProbing = false,
             IsRemote = false,
@@ -154,11 +154,10 @@ public class MultiplexedRestream : ILiveStream, IDisposable
         {
             if (_mediaSource is not null)
             {
-                // Jellyfin's Normalize() sets SupportsDirectStream = false for
-                // live TV sources.  Without DirectStream the StreamBuilder can
-                // only choose DirectPlay or Transcode; since Swiftfin/iOS routes
-                // through the server, it falls to Transcode.  Reset it here.
+                // Jellyfin's Normalize() overrides these for live TV sources.
+                // Reset them to ensure stream copy (no transcoding) on all clients.
                 _mediaSource.SupportsDirectStream = true;
+                _mediaSource.SupportsTranscoding = false;
 
                 if (_mediaSource.MediaStreams is not null)
                 {
