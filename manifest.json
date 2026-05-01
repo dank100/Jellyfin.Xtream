@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix: Increase AnalyzeDurationMs from 500 to 10000 to prevent ffmpeg exit code 234 when remuxing HLS streams. Fixes web player and iOS playback failures.",
+        "checksum": "e5c350b8f1848c22edde31cbc90032ef",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.62.0/jellyfin-xtream_0.9.62.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-01T19:27:37Z",
+        "version": "0.9.62.0"
+      },
+      {
         "changelog": "Two changes to eliminate iOS transcoding:\n1. SupportsTranscoding=false — forces DirectStream/DirectPlay\n2. Container=\"mp4\" — matches iOS DirectPlayProfile (was \"ts\" which iOS profiles likely exclude)\n\nCombined with earlier fixes (IsInterlaced=false, SupportsDirectStream=true), this should finally force stream copy on all clients.",
         "checksum": "e09877ede53086fe1e159c973f028ce4",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.61.0/jellyfin-xtream_0.9.61.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T06:19:43Z",
         "version": "0.9.23.0"
-      },
-      {
-        "changelog": "## Fix seekbar time correlation\n\nSet `IsLive=false` on the virtual recording programme. The live TV player was positioning the seekbar at wall clock \"now\" instead of the actual playback position. Now the seekbar correctly starts at the programme start time and reflects where you actually are in the recording.",
-        "checksum": "f1c03d818a019d016cc8f6f63df22b5c",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.22.0/jellyfin-xtream_0.9.22.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T05:49:13Z",
-        "version": "0.9.22.0"
       }
     ]
   }
