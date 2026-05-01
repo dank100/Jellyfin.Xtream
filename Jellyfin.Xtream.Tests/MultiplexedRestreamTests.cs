@@ -216,7 +216,8 @@ public class MultiplexedRestreamTests
 
         // Transcoding must be enabled so web player can use HLS remux path
         Assert.True(source.SupportsTranscoding, "Transcoding must be enabled for HLS remux");
-        Assert.True(source.SupportsDirectStream, "DirectStream must be enabled");
+        // DirectStream must be disabled — it copies audio to MP4 without BSF
+        Assert.False(source.SupportsDirectStream, "DirectStream must be disabled");
 
         // Video stream — must enable stream copy
         var video = source.MediaStreams.First(s => s.Type == MediaStreamType.Video);

@@ -86,7 +86,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             Container = "ts",
             AnalyzeDurationMs = 10000,
             SupportsDirectPlay = true,
-            SupportsDirectStream = true,
+            SupportsDirectStream = false,
             SupportsTranscoding = true,
             IsInfiniteStream = true,
             SupportsProbing = false,
@@ -155,8 +155,9 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             if (_mediaSource is not null)
             {
                 // Jellyfin's Normalize() overrides these for live TV sources.
-                // Reset them to ensure the HLS remux path is available.
-                _mediaSource.SupportsDirectStream = true;
+                // DirectStream copies audio to MP4 without BSF (breaks AAC from TS).
+                // Only allow DirectPlay (native HLS) or Transcode (HLS with audio transcode).
+                _mediaSource.SupportsDirectStream = false;
                 _mediaSource.SupportsTranscoding = true;
 
                 if (_mediaSource.MediaStreams is not null)
