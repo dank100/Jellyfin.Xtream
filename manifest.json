@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Force stream copy on all clients by disabling transcoding.\n\nSwiftfin device profile has conditions that reject H264 for stream copy, forcing H264→AV1 transcode at 0.8x speed (unusable). With SupportsTranscoding=false, the StreamBuilder must choose DirectStream (codec copy) or DirectPlay. H264 via HLS is natively supported on all iOS devices.",
+        "checksum": "ec3feda665d54359023229fd1937cf5e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.60.0/jellyfin-xtream_0.9.60.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-01T17:03:06Z",
+        "version": "0.9.60.0"
+      },
+      {
         "changelog": "Fix iOS/Swiftfin transcoding: Jellyfin Normalize() also sets SupportsDirectStream=false for live TV sources, leaving only DirectPlay or Transcode. Since Swiftfin routes through the server, Transcode was the only option. Now reset SupportsDirectStream=true in MediaSource getter.",
         "checksum": "330a2bc8cf433bb574c865f16ac9a700",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.59.0/jellyfin-xtream_0.9.59.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T05:40:37Z",
         "version": "0.9.21.0"
-      },
-      {
-        "changelog": "## Seeking and start-from-beginning for recording channels\n\n- **Start from beginning**: Injects `#EXT-X-START:TIME-OFFSET=0` into the HLS playlist so playback starts from the first segment instead of the live edge.\n- **Seeking support**: Enables `SupportsTranscoding` and `SupportsDirectStream` so Jellyfin can restart the transcode with `-ss` when seeking.\n- **Media stream info**: Declares h264/aac streams so Jellyfin can make proper direct-play vs transcode decisions.",
-        "checksum": "21df8a49ab4859e4f5c7eb1800ff2284",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.20.0/jellyfin-xtream_0.9.20.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T05:30:43Z",
-        "version": "0.9.20.0"
       }
     ]
   }
