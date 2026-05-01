@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix web player: enable SupportsTranscoding for HLS remux path.\n\nWith SupportsTranscoding=true, the web player can use HLS with video copy + audio transcode, avoiding the AAC ADTS-to-fMP4 issue.",
+        "checksum": "1e55ad95f82c6da98967c07a31c905d4",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.64.0/jellyfin-xtream_0.9.64.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-01T19:48:32Z",
+        "version": "0.9.64.0"
+      },
+      {
         "changelog": "Fix: Use Container=ts so Jellyfin adds aac_adtstoasc bitstream filter when remuxing to fMP4 HLS. Fixes web player playback error (malformed AAC bitstream).",
         "checksum": "669dd19f9152c10a8989152ffdc6666e",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.63.0/jellyfin-xtream_0.9.63.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T06:50:25Z",
         "version": "0.9.25.0"
-      },
-      {
-        "changelog": "## Fix programme end time\n\nProgramme end was `now + totalDuration` which overshot past the actual scheduled end. Now uses `scheduledEnd` directly so the seekbar window is `[now, scheduledEnd]` = remaining recording time.\n\n`RunTimeTicks` on the MediaSource also reflects remaining duration to stay in sync.",
-        "checksum": "348234cbf000156918220288b68e0214",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.24.0/jellyfin-xtream_0.9.24.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T06:40:11Z",
-        "version": "0.9.24.0"
       }
     ]
   }
