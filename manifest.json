@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix: Use Container=ts so Jellyfin adds aac_adtstoasc bitstream filter when remuxing to fMP4 HLS. Fixes web player playback error (malformed AAC bitstream).",
+        "checksum": "669dd19f9152c10a8989152ffdc6666e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.63.0/jellyfin-xtream_0.9.63.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-01T19:37:45Z",
+        "version": "0.9.63.0"
+      },
+      {
         "changelog": "Fix: Increase AnalyzeDurationMs from 500 to 10000 to prevent ffmpeg exit code 234 when remuxing HLS streams. Fixes web player and iOS playback failures.",
         "checksum": "e5c350b8f1848c22edde31cbc90032ef",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.62.0/jellyfin-xtream_0.9.62.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T06:40:11Z",
         "version": "0.9.24.0"
-      },
-      {
-        "changelog": "## Fix seekbar position sync\n\nThe live TV player calculates seekbar position as `now - programme.StartDate`. When the programme used the original schedule (e.g. yesterday 19:00), the offset was hours off.\n\nNow the programme is anchored at the current time with the full duration, so the player calculates `now - now = 0` → seekbar starts at the beginning, matching the actual video.\n\n**Trade-off**: Timeline shows current time range instead of original EPG times. Original schedule is shown in the programme description.",
-        "checksum": "df85a0b6b8c1643c78158670a60ba83f",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.23.0/jellyfin-xtream_0.9.23.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T06:19:43Z",
-        "version": "0.9.23.0"
       }
     ]
   }
