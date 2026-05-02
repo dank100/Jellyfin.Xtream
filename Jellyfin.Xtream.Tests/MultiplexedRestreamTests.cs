@@ -16,6 +16,7 @@
 using System.Net;
 using MediaBrowser.Controller;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -49,12 +50,12 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_ProbingEnabled()
+    public void MediaSource_ProbingDisabled()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        Assert.True(source.SupportsProbing, "SupportsProbing should be true so Jellyfin probes real stream codecs");
+        Assert.False(source.SupportsProbing, "SupportsProbing should be false to avoid probe→close→reopen losing codec info");
     }
 
     [Fact]
@@ -148,12 +149,22 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_NoSyntheticMediaStreams()
+    public void MediaSource_SyntheticMediaStreams()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        // v0.9.54 relies on probing — no pre-populated streams
-        Assert.True(source.MediaStreams == null || source.MediaStreams.Count == 0);
+        Assert.NotNull(source.MediaStreams);
+        Assert.Equal(2, source.MediaStreams.Count);
+
+        var video = source.MediaStreams[0];
+        Assert.Equal(MediaStreamType.Video, video.Type);
+        Assert.Equal("h264", video.Codec);
+        Assert.Equal(0, video.Index);
+
+        var audio = source.MediaStreams[1];
+        Assert.Equal(MediaStreamType.Audio, audio.Type);
+        Assert.Equal("aac", audio.Codec);
+        Assert.Equal(1, audio.Index);
     }
 }

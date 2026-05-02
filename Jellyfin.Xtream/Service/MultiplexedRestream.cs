@@ -78,8 +78,26 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             SupportsDirectStream = true,
             SupportsTranscoding = true,
             IsInfiniteStream = true,
-            SupportsProbing = true,
+            SupportsProbing = false,
             IsRemote = false,
+            MediaStreams = new List<MediaStream>
+            {
+                new MediaStream
+                {
+                    Type = MediaStreamType.Video,
+                    Index = 0,
+                    Codec = "h264",
+                    BitRate = 20_000_000,
+                    IsDefault = true,
+                },
+                new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Index = 1,
+                    Codec = "aac",
+                    IsDefault = true,
+                },
+            },
         };
 
         OriginalStreamId = _mediaSource.Id;
