@@ -166,5 +166,8 @@ public class MultiplexedRestreamTests
         Assert.Equal(MediaStreamType.Audio, audio.Type);
         Assert.Equal("aac", audio.Codec);
         Assert.Equal(1, audio.Index);
+        Assert.Equal(2, audio.Channels);
+        Assert.Equal("stereo", audio.ChannelLayout);
+        Assert.Equal(48000, audio.SampleRate);
     }
 }
