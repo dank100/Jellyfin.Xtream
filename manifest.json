@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Revert to v0.9.76 approach: no getter overrides, proper MediaStreams. iPhone DirectPlays, Android TV copy-mode remux.",
+        "checksum": "8daa23d8425a299ccf91512cbb22c97d",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.81.0/jellyfin-xtream_0.9.81.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T08:33:45Z",
+        "version": "0.9.81.0"
+      },
+      {
         "changelog": "Force true DirectPlay: empty MediaStreams + container=hls. Fixes iPhone playback failure.",
         "checksum": "e5815d8ce45318ebc30866cefdf82354",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.80.0/jellyfin-xtream_0.9.80.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-29T08:24:48Z",
         "version": "0.9.51.0"
-      },
-      {
-        "changelog": "### Fixes\n- **Keyframe-aligned stream start**: Scan buffer for MPEG-TS RAI flag before serving — eliminates ~140 'non-existing PPS 0 referenced' decode errors at stream start\n- **Channel probe on Live TV selection** (removed from TV Overrides page)\n- **Pre-buffer 256KB** for reliable stream probing on Android TV",
-        "checksum": "ff5a472d49cbb36163226107d6975aa3",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.50.0/jellyfin-xtream_0.9.50.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-29T08:14:09Z",
-        "version": "0.9.50.0"
       }
     ]
   }
