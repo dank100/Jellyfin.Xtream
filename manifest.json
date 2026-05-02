@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Probe first segment with ffprobe for real codec metadata (resolution, profile, level, channels) instead of hardcoded values",
+        "checksum": "2a48776d1ecac3b385bf44faa3b3021d",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.76.0/jellyfin-xtream_0.9.76.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T07:37:50Z",
+        "version": "0.9.76.0"
+      },
+      {
         "changelog": "Add audio channel info (stereo/48kHz) to synthetic streams to prevent unnecessary stereo→5.1 upmix transcode",
         "checksum": "a58d7b1099578aed34b6122c109044e4",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.75.0/jellyfin-xtream_0.9.75.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-25T19:15:08Z",
         "version": "0.9.45.0"
-      },
-      {
-        "changelog": "## Changes in v0.9.44.0\n\n- Fix non-monotonic DTS causing playback stutter (removed -break_non_keyframes)\n- Revert probesize from 500K to 1M (eliminates 0-segment captures)\n- Consistent yield at 4 segments (no premature starving yield)\n- 0-segment capture detection and logging\n- Pump poll reduced to 100ms, WaitForExit 500ms\n- All 60 integration tests passing",
-        "checksum": "a6bc2d0014c84d8fe949b0760a82a08f",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.44.0/jellyfin-xtream_0.9.44.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-25T18:04:02Z",
-        "version": "0.9.44.0"
       }
     ]
   }
