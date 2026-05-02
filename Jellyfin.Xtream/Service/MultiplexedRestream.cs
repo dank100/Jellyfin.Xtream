@@ -42,6 +42,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
     private readonly ILogger _logger;
     private readonly ConnectionMultiplexer _multiplexer;
     private readonly int _streamId;
+    private MediaSourceInfo _mediaSource;
     private bool _disposed;
 
     /// <summary>
@@ -65,7 +66,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
         string hlsPath = $"/Xtream/Multiplex/{streamId}/playlist.m3u8";
         string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
 
-        MediaSource = new MediaSourceInfo
+        _mediaSource = new MediaSourceInfo
         {
             Id = $"multiplex_{streamId}",
             Path = baseUrl + hlsPath,
@@ -81,7 +82,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             IsRemote = false,
         };
 
-        OriginalStreamId = MediaSource.Id;
+        OriginalStreamId = _mediaSource.Id;
     }
 
     /// <inheritdoc />
@@ -97,7 +98,38 @@ public class MultiplexedRestream : ILiveStream, IDisposable
     public bool EnableStreamSharing => true;
 
     /// <inheritdoc />
-    public MediaSourceInfo MediaSource { get; set; }
+    /// <remarks>
+    /// Jellyfin's LiveTvMediaSourceProvider.Normalize() unconditionally sets
+    /// SupportsDirectStream=false and IsInterlaced=true for every video stream
+    /// from non-default LiveTV services. The getter resets these each time
+    /// Jellyfin reads the property so that clients see DirectStream as available
+    /// and don't add a yadif deinterlacer (which forces full video transcode).
+    /// </remarks>
+    public MediaSourceInfo MediaSource
+    {
+        get
+        {
+            if (_mediaSource is not null)
+            {
+                _mediaSource.SupportsDirectStream = true;
+
+                if (_mediaSource.MediaStreams is not null)
+                {
+                    foreach (var s in _mediaSource.MediaStreams)
+                    {
+                        if (s.Type == MediaStreamType.Video)
+                        {
+                            s.IsInterlaced = false;
+                        }
+                    }
+                }
+            }
+
+            return _mediaSource!;
+        }
+
+        set => _mediaSource = value;
+    }
 
     /// <inheritdoc />
     public string UniqueId { get; init; }
