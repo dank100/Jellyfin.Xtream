@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Add getter to counter Normalize() DirectStream override + probing + skip first segment",
+        "checksum": "be94b36b1b803621e25833a6fb7e2d6e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.72.0/jellyfin-xtream_0.9.72.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T06:53:17Z",
+        "version": "0.9.72.0"
+      },
+      {
         "changelog": "Skip partial first segment to fix probe failures on channels with missing SPS/PPS",
         "checksum": "0bbcabdddadd4d13e2bdf2a07bc90bb8",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.71.0/jellyfin-xtream_0.9.71.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-25T10:58:51Z",
         "version": "0.9.41.0"
-      },
-      {
-        "changelog": "## Changes\n\n- Switch recording playback from TS tailing to HLS playlist approach for reliable seeking and playback during multiplexer gaps\n- Fix timer restart bug where cancelled recordings were re-started by CheckTimers\n- Fix recording file cleanup so intermediate .ts, .strm, and segment files are always removed\n- Add integration test suite (21 assertions covering single/dual recordings, stream keepalive, HLS playback, cleanup)",
-        "checksum": "233404f6bd7510ebf87250f490a692dd",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.40.0/jellyfin-xtream_0.9.40.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-25T10:20:02Z",
-        "version": "0.9.40.0"
       }
     ]
   }
