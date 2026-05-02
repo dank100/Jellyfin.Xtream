@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Skip partial first segment to fix probe failures on channels with missing SPS/PPS",
+        "checksum": "0bbcabdddadd4d13e2bdf2a07bc90bb8",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.71.0/jellyfin-xtream_0.9.71.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T06:46:50Z",
+        "version": "0.9.71.0"
+      },
+      {
         "changelog": "Restore v0.9.54.0 MultiplexedRestream: probing-based, all delivery paths enabled",
         "checksum": "62fb200c9d859601a90ad9dc5b11de49",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.70.0/jellyfin-xtream_0.9.70.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-25T10:20:02Z",
         "version": "0.9.40.0"
-      },
-      {
-        "changelog": "- **Fix recording seeking**: Inject #EXT-X-ENDLIST so hls.js treats playlist as VOD → full backward seeking from segment 0\n- #EXT-X-START:TIME-OFFSET=-12 positions player near live edge on initial load\n- Direct-play HLS (no transcoding) for recording channels\n- Remove [Produces] from recording playlist endpoint",
-        "checksum": "d42c4b7a4e9a7fa5ee85a04bae35d400",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.39.0/jellyfin-xtream_0.9.39.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T19:58:31Z",
-        "version": "0.9.39.0"
       }
     ]
   }
