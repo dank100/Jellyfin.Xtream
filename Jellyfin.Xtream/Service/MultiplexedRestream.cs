@@ -14,13 +14,14 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
 using Microsoft.Extensions.Logging;
 
@@ -28,11 +29,10 @@ namespace Jellyfin.Xtream.Service;
 
 /// <summary>
 /// A live stream backed by the <see cref="ConnectionMultiplexer"/>.
-/// Serves a continuous MPEG-TS byte stream via Jellyfin's standard
-/// LiveStreamFiles endpoint so that ffmpeg remux/transcode paths
-/// automatically receive the <c>aac_adtstoasc</c> bitstream filter.
+/// Points Jellyfin at the per-channel HLS playlist so the web player
+/// (hls.js) or native apps can direct-play without an ffmpeg remux step.
 /// </summary>
-public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposable
+public class MultiplexedRestream : ILiveStream, IDisposable
 {
     /// <summary>
     /// The global constant for the multiplexed tuner host.
@@ -42,7 +42,7 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     private readonly ILogger _logger;
     private readonly ConnectionMultiplexer _multiplexer;
     private readonly int _streamId;
-    private readonly CancellationTokenSource _cts = new();
+    private MediaSourceInfo _mediaSource;
     private bool _disposed;
 
     /// <summary>
@@ -60,27 +60,71 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
 
         UniqueId = Guid.NewGuid().ToString();
 
-        // Use the standard LiveTV stream path. Jellyfin's EncodingHelper
-        // adds -bsf:a aac_adtstoasc when reading from this path, fixing
-        // the AAC ADTS→MP4/fMP4 issue for all clients.
-        string path = $"/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
+        // Point directly at the HLS playlist so clients with hls.js (web player)
+        // can direct-play without a Jellyfin remuxer in between. Discontinuity
+        // tags in the m3u8 handle PTS jumps natively.
+        string hlsPath = $"/Xtream/Multiplex/{streamId}/playlist.m3u8";
+        string baseUrl = appHost.GetSmartApiUrl(IPAddress.Any);
 
-        MediaSource = new MediaSourceInfo
+        // Disable probing so Jellyfin does NOT open→probe→close→reopen the
+        // stream.  Without this, Jellyfin's LiveStreamHelper hard-codes
+        // AnalyzeDurationMs=3000 (overriding our 500) and the probe cycle
+        // adds ~3-4s to startup — enough to trigger an Android TV error toast.
+        // With SupportsProbing=false, Jellyfin uses AddMediaInfo() which
+        // preserves our AnalyzeDurationMs and skips the extra round-trip.
+        //
+        // We must provide MediaStreams with valid codecs and Index >= 0 so
+        // Jellyfin's StreamBuilder can determine that direct play / stream
+        // copy is possible.  Without codec info it falls back to full
+        // software transcode (H264→HEVC at ~0.4x realtime).
+        _mediaSource = new MediaSourceInfo
         {
             Id = $"multiplex_{streamId}",
-            Path = appHost.GetSmartApiUrl(IPAddress.Any) + path,
-            EncoderPath = appHost.GetApiUrlForLocalAccess() + path,
+            Path = baseUrl + hlsPath,
+            EncoderPath = baseUrl + hlsPath,
             Protocol = MediaProtocol.Http,
             Container = "ts",
+            AnalyzeDurationMs = 10000,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsTranscoding = true,
             IsInfiniteStream = true,
-            SupportsProbing = true,
+            SupportsProbing = false,
             IsRemote = false,
+            MediaStreams = new List<MediaStream>
+            {
+                new MediaStream
+                {
+                    Type = MediaStreamType.Video,
+                    Index = 0,
+                    Codec = "h264",
+                    Profile = "High",
+                    Width = 1920,
+                    Height = 1080,
+                    IsDefault = true,
+                    PixelFormat = "yuv420p",
+                    BitRate = 20_000_000,
+                    AspectRatio = "16:9",
+                    IsInterlaced = false,
+                    BitDepth = 8,
+                    Level = 40,
+                },
+                new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Index = 1,
+                    Codec = "eac3",
+                    Profile = "LC",
+                    Channels = 2,
+                    ChannelLayout = "stereo",
+                    SampleRate = 48000,
+                    IsDefault = true,
+                    BitRate = 128000,
+                },
+            },
         };
 
-        OriginalStreamId = MediaSource.Id;
+        OriginalStreamId = _mediaSource.Id;
     }
 
     /// <inheritdoc />
@@ -96,38 +140,57 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     public bool EnableStreamSharing => true;
 
     /// <inheritdoc />
-    public MediaSourceInfo MediaSource { get; set; }
+    /// <remarks>
+    /// Jellyfin's LiveTvMediaSourceProvider.Normalize() unconditionally sets
+    /// IsInterlaced=true for every video stream from non-default LiveTV services.
+    /// This forces clients (especially iOS/Swiftfin) to add a yadif deinterlacer,
+    /// which in turn forces a full video transcode instead of stream copy.
+    /// The getter resets IsInterlaced=false each time Jellyfin reads it so that
+    /// OpenLiveStreamInternal sees the correct (progressive) value.
+    /// </remarks>
+    public MediaSourceInfo MediaSource
+    {
+        get
+        {
+            if (_mediaSource is not null)
+            {
+                // Jellyfin's Normalize() overrides these for live TV sources.
+                // Reset them to ensure the HLS remux path is available.
+                _mediaSource.SupportsDirectStream = true;
+                _mediaSource.SupportsTranscoding = true;
+
+                if (_mediaSource.MediaStreams is not null)
+                {
+                    foreach (var s in _mediaSource.MediaStreams)
+                    {
+                        if (s.Type == MediaStreamType.Video)
+                        {
+                            s.IsInterlaced = false;
+                        }
+                    }
+                }
+            }
+
+            return _mediaSource!;
+        }
+
+        set => _mediaSource = value;
+    }
 
     /// <inheritdoc />
     public string UniqueId { get; init; }
 
     /// <summary>
-    /// Returns a continuous MPEG-TS stream that concatenates segment files
-    /// from the multiplexer's channel buffer.
+    /// Returns a stream for the transcoder fallback path.
+    /// With HLS direct play, this should not be called; returns an empty stream.
     /// </summary>
-    /// <returns>A readable stream of concatenated TS segments.</returns>
-    public Stream GetStream()
+    /// <returns>An empty stream.</returns>
+    public System.IO.Stream GetStream()
     {
-        var buffer = _multiplexer?.GetBuffer(_streamId);
-        if (buffer is null)
-        {
-            _logger.LogWarning(
-                "GetStream() called for channel {StreamId} but no buffer exists",
-                _streamId);
-            return Stream.Null;
-        }
-
-        // Start from the most recent segment to minimize latency
-        var segments = buffer.GetSegments();
-        int startIndex = Math.Max(0, segments.Count - 2);
-
-        _logger.LogInformation(
-            "Opening TS stream reader for channel {StreamId}, starting at segment {Index}/{Total}",
-            _streamId,
-            startIndex,
-            segments.Count);
-
-        return new MultiplexedSegmentStream(buffer, startIndex, _cts.Token);
+        _logger.LogWarning(
+            "GetStream() called for multiplexed channel {StreamId} — expected HLS direct play, falling back to empty stream",
+            _streamId);
+        return System.IO.Stream.Null;
     }
 
     /// <inheritdoc />
@@ -136,13 +199,15 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         _logger.LogInformation("Opening multiplexed stream for channel {StreamId}", _streamId);
         var buffer = _multiplexer.Subscribe(_streamId, isLive: true);
 
-        // Wait for enough segments before allowing probe/playback.
-        const int minSegments = 3;
+        // Wait for enough segments to fill buffer sufficiently before playback.
+        // With SupportsProbing=false there is no second open, so 2 segments
+        // (typically 4s at default MultiplexSliceSeconds=2) is sufficient.
+        const int minSegments = 2;
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (buffer.GetSegments().Count < minSegments && DateTime.UtcNow < deadline)
         {
             openCancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(500, openCancellationToken).ConfigureAwait(false);
+            await Task.Delay(200, openCancellationToken).ConfigureAwait(false);
         }
 
         _logger.LogInformation(
@@ -152,11 +217,11 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
     }
 
     /// <inheritdoc />
-    public async Task Close()
+    public Task Close()
     {
         _logger.LogInformation("Closing multiplexed stream for channel {StreamId}", _streamId);
-        await _cts.CancelAsync().ConfigureAwait(false);
         _multiplexer.Unsubscribe(_streamId, isLive: true);
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -168,11 +233,6 @@ public class MultiplexedRestream : ILiveStream, IDirectStreamProvider, IDisposab
         if (_disposed)
         {
             return;
-        }
-
-        if (disposing)
-        {
-            _cts.Dispose();
         }
 
         _disposed = true;
