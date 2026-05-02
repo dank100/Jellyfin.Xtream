@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Force DirectPlay only — disable DirectStream and Transcoding to fix iPhone playback",
+        "checksum": "8dd05626846a1b548c7437b124d22330",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.79.0/jellyfin-xtream_0.9.79.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T07:57:49Z",
+        "version": "0.9.79.0"
+      },
+      {
         "changelog": "Counter Normalize() SupportsTranscoding=true override in getter to force DirectPlay",
         "checksum": "b8868087428ee0fa162fb33277634310",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.78.0/jellyfin-xtream_0.9.78.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-29T07:07:29Z",
         "version": "0.9.49.0"
-      },
-      {
-        "changelog": "## What's Changed\n\n- **HLS direct play**: Serve live TV as HLS playlists with `EXT-X-DISCONTINUITY` markers for PTS jump handling\n- **Direct play** on Android TV, Samsung Tizen, LG webOS, Xbox — no remux needed\n- Web clients get lossless remux (`-codec copy`) automatically (Jellyfin design constraint)\n- Removed `IDirectStreamProvider`, `TsTimestampRewriter`, `WrappedBufferStream` — simplified to pure HLS segment serving\n- **Fixed stale playlist bug** causing replay when all segments are pruned\n- Added 6 ChannelBuffer unit tests for replay detection and playlist correctness\n- 23 total tests passing",
-        "checksum": "3efbc9c793ec13f2850a90248ae39791",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.48.0/jellyfin-xtream_0.9.48.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-27T11:18:08Z",
-        "version": "0.9.48.0"
       }
     ]
   }
