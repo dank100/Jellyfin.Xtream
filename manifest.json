@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Disable SupportsTranscoding to force DirectPlay of HLS URL — eliminates unnecessary ffmpeg remux on iPhone and Android TV",
+        "checksum": "fd81112c4ccac83928f28e0fccbae711",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.77.0/jellyfin-xtream_0.9.77.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T07:44:14Z",
+        "version": "0.9.77.0"
+      },
+      {
         "changelog": "Probe first segment with ffprobe for real codec metadata (resolution, profile, level, channels) instead of hardcoded values",
         "checksum": "2a48776d1ecac3b385bf44faa3b3021d",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.76.0/jellyfin-xtream_0.9.76.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-27T04:02:15Z",
         "version": "0.9.47.0"
-      },
-      {
-        "changelog": "Optimize prebuffer and round-robin for stable playback\n\n- Use all available segments as prebuffer for larger initial burst\n- Increase Open wait to 5 segments\n- Reduce yield to 4 for faster round-robin cycling\n- Add -err_detect ignore_err to remuxer\n- Add remuxer exit code logging",
-        "checksum": "2f3d6d1aa3e213d3cc5991787147934a",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.45.0/jellyfin-xtream_0.9.45.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-25T19:15:08Z",
-        "version": "0.9.45.0"
       }
     ]
   }
