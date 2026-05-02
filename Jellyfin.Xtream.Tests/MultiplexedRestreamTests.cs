@@ -87,12 +87,12 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_AnalyzeDuration_Is500ms()
+    public void MediaSource_AnalyzeDuration_Is3000ms()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        Assert.Equal(500, source.AnalyzeDurationMs);
+        Assert.Equal(3000, source.AnalyzeDurationMs);
     }
 
     [Fact]
@@ -209,7 +209,7 @@ public class MultiplexedRestreamTests
 
         // Core properties for avoiding transcoding
         Assert.False(source.SupportsProbing, "Probing must be disabled");
-        Assert.Equal(500, source.AnalyzeDurationMs);
+        Assert.Equal(3000, source.AnalyzeDurationMs);
         Assert.True(source.SupportsDirectPlay);
         Assert.True(source.IsInfiniteStream);
         Assert.Equal("ts", source.Container);

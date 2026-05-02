@@ -84,10 +84,10 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             EncoderPath = baseUrl + hlsPath,
             Protocol = MediaProtocol.Http,
             Container = "ts",
-            AnalyzeDurationMs = 500,
+            AnalyzeDurationMs = 3000,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
-            SupportsTranscoding = false,
+            SupportsTranscoding = true,
             IsInfiniteStream = true,
             SupportsProbing = false,
             IsRemote = false,
@@ -155,9 +155,9 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             if (_mediaSource is not null)
             {
                 // Jellyfin's Normalize() overrides these for live TV sources.
-                // Reset them to ensure stream copy (no transcoding) on all clients.
+                // Reset them to ensure DirectStream and HLS remux paths are available.
                 _mediaSource.SupportsDirectStream = true;
-                _mediaSource.SupportsTranscoding = false;
+                _mediaSource.SupportsTranscoding = true;
 
                 if (_mediaSource.MediaStreams is not null)
                 {
