@@ -26,6 +26,7 @@ using System.Threading.Tasks;
 using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Configuration;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -863,6 +864,205 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
         }
 
         return "ffmpeg";
+    }
+
+    private static string GetFfprobePath()
+    {
+        string ffmpegPath = GetFfmpegPath();
+        string? dir = Path.GetDirectoryName(ffmpegPath);
+        if (dir != null)
+        {
+            string ffprobePath = Path.Combine(dir, "ffprobe");
+            if (File.Exists(ffprobePath))
+            {
+                return ffprobePath;
+            }
+        }
+
+        return "ffprobe";
+    }
+
+    /// <summary>
+    /// Probes a segment file using ffprobe and returns video/audio MediaStreams.
+    /// Results are cached per channel so repeated opens don't re-probe.
+    /// </summary>
+    /// <param name="segmentPath">Full path to the .ts segment file.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of video/audio MediaStream objects, or null if probe fails.</returns>
+#pragma warning disable CA3003, CA3006 // segmentPath is an internal filesystem path, not user input
+    internal async Task<List<MediaStream>?> ProbeSegmentAsync(string segmentPath, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(segmentPath))
+        {
+            _logger.LogWarning("Probe target does not exist: {Path}", segmentPath);
+            return null;
+        }
+
+        var ffprobePath = GetFfprobePath();
+        var psi = new ProcessStartInfo
+        {
+            FileName = ffprobePath,
+            ArgumentList = { "-v", "quiet", "-print_format", "json", "-show_streams", segmentPath },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        _logger.LogInformation("Probing segment {Path} with ffprobe", segmentPath);
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process == null)
+            {
+                _logger.LogWarning("Failed to start ffprobe");
+                return null;
+            }
+
+            string json = await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+            if (process.ExitCode != 0)
+            {
+                _logger.LogWarning("ffprobe exited with code {Code}", process.ExitCode);
+                return null;
+            }
+
+            return ParseFfprobeStreams(json);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "ffprobe failed for {Path}", segmentPath);
+            return null;
+        }
+    }
+#pragma warning restore CA3003, CA3006
+
+    private List<MediaStream>? ParseFfprobeStreams(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("streams", out var streamsArray))
+            {
+                return null;
+            }
+
+            var result = new List<MediaStream>();
+            int videoIdx = 0;
+            int audioIdx = 0;
+
+            foreach (var s in streamsArray.EnumerateArray())
+            {
+                string codecType = s.TryGetProperty("codec_type", out var ct) ? ct.GetString() ?? string.Empty : string.Empty;
+                string codecName = s.TryGetProperty("codec_name", out var cn) ? cn.GetString() ?? string.Empty : string.Empty;
+
+                if (codecType == "video")
+                {
+                    var ms = new MediaStream
+                    {
+                        Type = MediaStreamType.Video,
+                        Index = videoIdx++,
+                        Codec = codecName,
+                        IsDefault = true,
+                    };
+
+                    if (s.TryGetProperty("width", out var w))
+                    {
+                        ms.Width = w.GetInt32();
+                    }
+
+                    if (s.TryGetProperty("height", out var h))
+                    {
+                        ms.Height = h.GetInt32();
+                    }
+
+                    if (s.TryGetProperty("profile", out var prof))
+                    {
+                        ms.Profile = prof.GetString();
+                    }
+
+                    if (s.TryGetProperty("level", out var lvl))
+                    {
+                        ms.Level = lvl.GetInt32();
+                    }
+
+                    if (s.TryGetProperty("bit_rate", out var vbr) && int.TryParse(vbr.GetString(), out int videoBitRate))
+                    {
+                        ms.BitRate = videoBitRate;
+                    }
+                    else
+                    {
+                        ms.BitRate = 20_000_000;
+                    }
+
+                    if (s.TryGetProperty("r_frame_rate", out var rfr))
+                    {
+                        string? fpsStr = rfr.GetString();
+                        if (fpsStr != null && fpsStr.Contains('/', StringComparison.Ordinal))
+                        {
+                            var parts = fpsStr.Split('/');
+                            if (float.TryParse(parts[0], out float num) && float.TryParse(parts[1], out float den) && den > 0)
+                            {
+                                ms.RealFrameRate = num / den;
+                            }
+                        }
+                    }
+
+                    result.Add(ms);
+                }
+                else if (codecType == "audio")
+                {
+                    var ms = new MediaStream
+                    {
+                        Type = MediaStreamType.Audio,
+                        Index = audioIdx == 0 ? 1 : audioIdx + 1,
+                        Codec = codecName,
+                        IsDefault = audioIdx == 0,
+                    };
+                    audioIdx++;
+
+                    if (s.TryGetProperty("channels", out var ch))
+                    {
+                        ms.Channels = ch.GetInt32();
+                    }
+
+                    if (s.TryGetProperty("channel_layout", out var cl))
+                    {
+                        ms.ChannelLayout = cl.GetString();
+                    }
+
+                    if (s.TryGetProperty("sample_rate", out var sr) && int.TryParse(sr.GetString(), out int sampleRate))
+                    {
+                        ms.SampleRate = sampleRate;
+                    }
+
+                    if (s.TryGetProperty("bit_rate", out var abr) && int.TryParse(abr.GetString(), out int audioBitRate))
+                    {
+                        ms.BitRate = audioBitRate;
+                    }
+
+                    result.Add(ms);
+                }
+            }
+
+            // Must have at least one video and one audio stream to be useful
+            bool hasVideo = result.Exists(s => s.Type == MediaStreamType.Video);
+            bool hasAudio = result.Exists(s => s.Type == MediaStreamType.Audio);
+            if (!hasVideo || !hasAudio)
+            {
+                _logger.LogWarning("Probe incomplete: video={HasVideo} audio={HasAudio}", hasVideo, hasAudio);
+                return null;
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse ffprobe JSON");
+            return null;
+        }
     }
 
     /// <summary>

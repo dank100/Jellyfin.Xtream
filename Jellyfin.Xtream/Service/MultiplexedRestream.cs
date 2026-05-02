@@ -198,10 +198,32 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             await Task.Delay(500, openCancellationToken).ConfigureAwait(false);
         }
 
+        var segments = buffer.GetSegments();
         _logger.LogInformation(
             "Multiplexed stream for channel {StreamId}: {Count} segments ready",
             _streamId,
-            buffer.GetSegments().Count);
+            segments.Count);
+
+        // Probe the newest segment to get real codec metadata.
+        // Newest is least likely to be pruned during the probe.
+        if (segments.Count > 0)
+        {
+            var newest = segments[^1];
+            string segPath = System.IO.Path.Combine(buffer.SegmentDir, newest.Filename);
+            var probed = await _multiplexer.ProbeSegmentAsync(segPath, openCancellationToken).ConfigureAwait(false);
+            if (probed != null)
+            {
+                _mediaSource.MediaStreams = probed;
+                _logger.LogInformation(
+                    "Probed channel {StreamId}: {Streams}",
+                    _streamId,
+                    string.Join(", ", probed.ConvertAll(s => $"{s.Type}:{s.Codec} {s.Width}x{s.Height}")));
+            }
+            else
+            {
+                _logger.LogWarning("Probe failed for channel {StreamId}, using synthetic defaults", _streamId);
+            }
+        }
     }
 
     /// <inheritdoc />
