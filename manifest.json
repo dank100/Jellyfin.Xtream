@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix Index=-1 from HLS probe to enable DirectStream path",
+        "checksum": "9ba4ec02929dd87dacad3e7a88da5566",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.73.0/jellyfin-xtream_0.9.73.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T06:58:12Z",
+        "version": "0.9.73.0"
+      },
+      {
         "changelog": "Add getter to counter Normalize() DirectStream override + probing + skip first segment",
         "checksum": "be94b36b1b803621e25833a6fb7e2d6e",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.72.0/jellyfin-xtream_0.9.72.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-25T11:44:29Z",
         "version": "0.9.42.0"
-      },
-      {
-        "changelog": "## Changes\n\n- Fix recording playback failure (ffmpeg exit 234): delay library notification until 3 HLS segments are ready so ffprobe has enough data to analyze\n- Fix recording file cleanup so .ts, .strm, and segment files are always removed\n- Add ffprobe/ffmpeg validation to integration tests (28 assertions)",
-        "checksum": "b789bbac6f7c2e457e1969bafb203f47",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.41.0/jellyfin-xtream_0.9.41.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-25T10:58:51Z",
-        "version": "0.9.41.0"
       }
     ]
   }
