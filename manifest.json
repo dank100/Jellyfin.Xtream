@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Counter Normalize() SupportsTranscoding=true override in getter to force DirectPlay",
+        "checksum": "b8868087428ee0fa162fb33277634310",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.78.0/jellyfin-xtream_0.9.78.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T07:48:30Z",
+        "version": "0.9.78.0"
+      },
+      {
         "changelog": "Disable SupportsTranscoding to force DirectPlay of HLS URL — eliminates unnecessary ffmpeg remux on iPhone and Android TV",
         "checksum": "fd81112c4ccac83928f28e0fccbae711",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.77.0/jellyfin-xtream_0.9.77.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-27T11:18:08Z",
         "version": "0.9.48.0"
-      },
-      {
-        "changelog": "Replace ffmpeg remuxer with in-process TsTimestampRewriter for zero-latency PTS/DTS/PCR normalization and continuity counter fixup. Wall-clock-based discontinuity adjustment prevents PTS drift during round-robin multiplexing. Null TS packet gap-fill keeps transcoder alive without backward timestamps. Add round-robin crash protection with error recovery. 13 unit tests.",
-        "checksum": "0e064f2d49db9fdb676fba5ca2c1349d",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.47.0/jellyfin-xtream_0.9.47.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-27T04:02:15Z",
-        "version": "0.9.47.0"
       }
     ]
   }
