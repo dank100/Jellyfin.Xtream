@@ -75,7 +75,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             Container = "ts",
             AnalyzeDurationMs = 500,
             SupportsDirectPlay = true,
-            SupportsDirectStream = true,
+            SupportsDirectStream = false,
             SupportsTranscoding = false,
             IsInfiniteStream = true,
             SupportsProbing = false,
@@ -132,7 +132,11 @@ public class MultiplexedRestream : ILiveStream, IDisposable
         {
             if (_mediaSource is not null)
             {
-                _mediaSource.SupportsDirectStream = true;
+                // Force DirectPlay only — no ffmpeg involvement.
+                // DirectStream for live TV still uses ffmpeg (audio transcode),
+                // and SupportsTranscoding enables the remux path. Both are unnecessary
+                // since iPhone/Android natively handle HLS.
+                _mediaSource.SupportsDirectStream = false;
                 _mediaSource.SupportsTranscoding = false;
 
                 if (_mediaSource.MediaStreams is not null)

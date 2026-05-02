@@ -77,20 +77,13 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_SupportsDirectStream()
+    public void MediaSource_DirectPlayOnly()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        Assert.True(source.SupportsDirectStream);
-    }
-
-    [Fact]
-    public void MediaSource_TranscodingDisabled()
-    {
-        var restream = CreateRestream();
-        var source = restream.MediaSource;
-
+        Assert.True(source.SupportsDirectPlay, "DirectPlay must be enabled for native HLS playback");
+        Assert.False(source.SupportsDirectStream, "DirectStream disabled — uses ffmpeg which breaks iPhone");
         Assert.False(source.SupportsTranscoding, "Transcoding/remux disabled to force DirectPlay of HLS URL");
     }
 
