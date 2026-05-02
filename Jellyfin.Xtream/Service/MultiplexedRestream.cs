@@ -115,11 +115,26 @@ public class MultiplexedRestream : ILiveStream, IDisposable
 
                 if (_mediaSource.MediaStreams is not null)
                 {
+                    int videoIdx = 0;
+                    int audioIdx = 1;
                     foreach (var s in _mediaSource.MediaStreams)
                     {
                         if (s.Type == MediaStreamType.Video)
                         {
                             s.IsInterlaced = false;
+                            // Probe assigns Index=-1 for HLS inputs;
+                            // StreamBuilder requires Index >= 0 for DirectStream.
+                            if (s.Index < 0)
+                            {
+                                s.Index = videoIdx++;
+                            }
+                        }
+                        else if (s.Type == MediaStreamType.Audio)
+                        {
+                            if (s.Index < 0)
+                            {
+                                s.Index = audioIdx++;
+                            }
                         }
                     }
                 }
