@@ -759,6 +759,21 @@ public sealed class ConnectionMultiplexer : IHostedService, IDisposable
                         continue;
                     }
 
+                    // Skip the very first segment of each capture — it starts
+                    // mid-stream and may lack SPS/PPS NAL units, causing
+                    // downstream probes to fail with "unspecified size".
+                    // Segment 1+ starts at keyframe boundaries.
+                    if (i == 0 && capture.FirstSegment)
+                    {
+                        _logger.LogInformation(
+                            "Skipping partial first segment {Filename} for stream {StreamId}",
+                            segFilename,
+                            buffer.StreamId);
+                        capture.CompletedCount = 1;
+                        capture.FirstSegment = false;
+                        continue;
+                    }
+
                     var segment = new SegmentInfo
                     {
                         Filename = segFilename,
