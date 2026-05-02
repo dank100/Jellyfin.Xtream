@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Force true DirectPlay: empty MediaStreams + container=hls. Fixes iPhone playback failure.",
+        "checksum": "e5815d8ce45318ebc30866cefdf82354",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.80.0/jellyfin-xtream_0.9.80.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T08:23:01Z",
+        "version": "0.9.80.0"
+      },
+      {
         "changelog": "Force DirectPlay only — disable DirectStream and Transcoding to fix iPhone playback",
         "checksum": "8dd05626846a1b548c7437b124d22330",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.79.0/jellyfin-xtream_0.9.79.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-29T08:14:09Z",
         "version": "0.9.50.0"
-      },
-      {
-        "changelog": "### Channel Probe Feature\n- 🔍 Probe button on Live TV channel selection shows codec, resolution, framerate, audio codec\n- Direct play compatibility per client (Android TV, Samsung Tizen, LG webOS, Xbox, Web)\n- Also available on TV Channel Overrides page\n\n### Direct Play Fix\n- Pre-buffer 256KB in Restream.Open() so Jellyfin's stream probe gets real video data\n- Fixes Height:0 / Level:-99 probe failures that prevented direct play on Android TV\n- Keyframe-aligned segment splitting for clean HLS playback",
-        "checksum": "294935aac3e19f5fabd33c8ccb9081ec",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.49.0/jellyfin-xtream_0.9.49.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-29T07:07:29Z",
-        "version": "0.9.49.0"
       }
     ]
   }
