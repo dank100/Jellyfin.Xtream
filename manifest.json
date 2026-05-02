@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Revert to v0.9.64.0 MultiplexedRestream (HLS playlist approach).\n\nRestores Android TV compatibility. The standard LiveTV stream path experiment (v0.9.65-v0.9.66) is reverted.",
+        "checksum": "f2f59dba904649ef3c32afc311682cf5",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.67.0/jellyfin-xtream_0.9.67.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T05:08:21Z",
+        "version": "0.9.67.0"
+      },
+      {
         "changelog": "Use standard LiveTV stream path for proper AAC BSF support on all clients.\n\n- Replaces custom HLS playlist with LiveTv/LiveStreamFiles endpoint\n- Jellyfin automatically adds -bsf:a aac_adtstoasc\n- Simplified back to v0.9.54-style MediaSourceInfo\n- Works for web, iOS, and Android without transcoding hacks",
         "checksum": "c2d7edfd1c0324fede28db3c78f260e9",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.66.0/jellyfin-xtream_0.9.66.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-24T07:59:37Z",
         "version": "0.9.28.0"
-      },
-      {
-        "changelog": "Fix recording seekbar: bypass Jellyfin transcoder via direct-play HLS. The plugin HLS endpoint now serves VOD-style playlist (#EXT-X-ENDLIST) so HLS.js starts from position 0 instead of the live edge.",
-        "checksum": "91fcdd3beb439751dc9aef091af7d1dd",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.27.0/Jellyfin.Xtream.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-24T07:37:14Z",
-        "version": "0.9.27.0"
       }
     ]
   }
