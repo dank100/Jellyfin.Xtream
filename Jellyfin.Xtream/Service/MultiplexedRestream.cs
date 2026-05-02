@@ -72,19 +72,37 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             Path = baseUrl + hlsPath,
             EncoderPath = baseUrl + hlsPath,
             Protocol = MediaProtocol.Http,
-            Container = "hls",
+            Container = "ts",
             AnalyzeDurationMs = 500,
             SupportsDirectPlay = true,
-            SupportsDirectStream = false,
-            SupportsTranscoding = false,
+            SupportsDirectStream = true,
+            SupportsTranscoding = true,
             IsInfiniteStream = true,
             SupportsProbing = false,
             IsRemote = false,
-            // No MediaStreams reported — prevents StreamBuilder from deciding
-            // audio/video transcoding is needed based on device profile codec
-            // matching. With DirectStream+Transcoding disabled and no codec info,
-            // all clients fall through to DirectPlay of the HLS URL.
-            MediaStreams = new List<MediaStream>(),
+            MediaStreams = new List<MediaStream>
+            {
+                new MediaStream
+                {
+                    Type = MediaStreamType.Video,
+                    Index = 0,
+                    Codec = "h264",
+                    BitRate = 20_000_000,
+                    Width = 1280,
+                    Height = 720,
+                    IsDefault = true,
+                },
+                new MediaStream
+                {
+                    Type = MediaStreamType.Audio,
+                    Index = 1,
+                    Codec = "aac",
+                    Channels = 2,
+                    ChannelLayout = "stereo",
+                    SampleRate = 48000,
+                    IsDefault = true,
+                },
+            },
         };
 
         OriginalStreamId = _mediaSource.Id;
@@ -104,29 +122,15 @@ public class MultiplexedRestream : ILiveStream, IDisposable
 
     /// <inheritdoc />
     /// <remarks>
-    /// Jellyfin's LiveTvMediaSourceProvider.Normalize() unconditionally sets
-    /// SupportsDirectStream=false, SupportsTranscoding=true, and IsInterlaced=true
-    /// for every video stream from non-default LiveTV services. The getter resets
-    /// these each time Jellyfin reads the property so that clients see DirectStream
-    /// as available, don't remux via ffmpeg, and don't add a yadif deinterlacer.
+    /// Jellyfin's LiveTvMediaSourceProvider.Normalize() sets SupportsDirectStream=false
+    /// and SupportsTranscoding=true for non-default live TV services. We intentionally
+    /// do NOT override these: with DirectStream=false, iPhone's Swiftfin client falls
+    /// through to DirectPlay (which works natively with HLS). Android TV uses the
+    /// Transcoding path with copy codecs (minimal overhead).
     /// </remarks>
     public MediaSourceInfo MediaSource
     {
-        get
-        {
-            if (_mediaSource is not null)
-            {
-                // Force DirectPlay only — no ffmpeg involvement.
-                // DirectStream for live TV still uses ffmpeg (audio transcode),
-                // and SupportsTranscoding enables the remux path. Both are unnecessary
-                // since iPhone/Android natively handle HLS.
-                _mediaSource.SupportsDirectStream = false;
-                _mediaSource.SupportsTranscoding = false;
-            }
-
-            return _mediaSource!;
-        }
-
+        get => _mediaSource!;
         set => _mediaSource = value;
     }
 
@@ -167,8 +171,26 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             _streamId,
             segments.Count);
 
-        // No probing needed — empty MediaStreams prevents StreamBuilder
-        // from making codec-based transcode decisions, forcing DirectPlay.
+        // Probe the newest segment to get real codec metadata.
+        // Newest is least likely to be pruned during the probe.
+        if (segments.Count > 0)
+        {
+            var newest = segments[^1];
+            string segPath = System.IO.Path.Combine(buffer.SegmentDir, newest.Filename);
+            var probed = await _multiplexer.ProbeSegmentAsync(segPath, openCancellationToken).ConfigureAwait(false);
+            if (probed != null)
+            {
+                _mediaSource.MediaStreams = probed;
+                _logger.LogInformation(
+                    "Probed channel {StreamId}: {Streams}",
+                    _streamId,
+                    string.Join(", ", probed.ConvertAll(s => $"{s.Type}:{s.Codec} {s.Width}x{s.Height}")));
+            }
+            else
+            {
+                _logger.LogWarning("Probe failed for channel {StreamId}, using synthetic defaults", _streamId);
+            }
+        }
     }
 
     /// <inheritdoc />

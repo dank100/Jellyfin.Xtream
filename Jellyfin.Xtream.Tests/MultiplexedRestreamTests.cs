@@ -77,14 +77,14 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_DirectPlayOnly()
+    public void MediaSource_DirectPlayEnabled()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        Assert.True(source.SupportsDirectPlay, "DirectPlay must be enabled for native HLS playback");
-        Assert.False(source.SupportsDirectStream, "DirectStream disabled — uses ffmpeg which breaks iPhone");
-        Assert.False(source.SupportsTranscoding, "Transcoding/remux disabled to force DirectPlay of HLS URL");
+        Assert.True(source.SupportsDirectPlay);
+        Assert.True(source.SupportsDirectStream);
+        Assert.True(source.SupportsTranscoding);
     }
 
     [Fact]
@@ -97,12 +97,12 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_Container_IsHls()
+    public void MediaSource_Container_IsTs()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        Assert.Equal("hls", source.Container);
+        Assert.Equal("ts", source.Container);
     }
 
     [Fact]
@@ -142,12 +142,27 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_EmptyMediaStreams()
+    public void MediaSource_SyntheticMediaStreams()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
         Assert.NotNull(source.MediaStreams);
-        Assert.Empty(source.MediaStreams);
+        Assert.Equal(2, source.MediaStreams.Count);
+
+        var video = source.MediaStreams[0];
+        Assert.Equal(MediaStreamType.Video, video.Type);
+        Assert.Equal("h264", video.Codec);
+        Assert.Equal(0, video.Index);
+        Assert.Equal(1280, video.Width);
+        Assert.Equal(720, video.Height);
+
+        var audio = source.MediaStreams[1];
+        Assert.Equal(MediaStreamType.Audio, audio.Type);
+        Assert.Equal("aac", audio.Codec);
+        Assert.Equal(1, audio.Index);
+        Assert.Equal(2, audio.Channels);
+        Assert.Equal("stereo", audio.ChannelLayout);
+        Assert.Equal(48000, audio.SampleRate);
     }
 }
