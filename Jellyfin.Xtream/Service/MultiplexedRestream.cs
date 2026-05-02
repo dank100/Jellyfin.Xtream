@@ -121,10 +121,10 @@ public class MultiplexedRestream : ILiveStream, IDisposable
     /// <inheritdoc />
     /// <remarks>
     /// Jellyfin's LiveTvMediaSourceProvider.Normalize() unconditionally sets
-    /// SupportsDirectStream=false and IsInterlaced=true for every video stream
-    /// from non-default LiveTV services. The getter resets these each time
-    /// Jellyfin reads the property so that clients see DirectStream as available
-    /// and don't add a yadif deinterlacer (which forces full video transcode).
+    /// SupportsDirectStream=false, SupportsTranscoding=true, and IsInterlaced=true
+    /// for every video stream from non-default LiveTV services. The getter resets
+    /// these each time Jellyfin reads the property so that clients see DirectStream
+    /// as available, don't remux via ffmpeg, and don't add a yadif deinterlacer.
     /// </remarks>
     public MediaSourceInfo MediaSource
     {
@@ -133,6 +133,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             if (_mediaSource is not null)
             {
                 _mediaSource.SupportsDirectStream = true;
+                _mediaSource.SupportsTranscoding = false;
 
                 if (_mediaSource.MediaStreams is not null)
                 {
