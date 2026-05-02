@@ -76,7 +76,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             AnalyzeDurationMs = 500,
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
-            SupportsTranscoding = true,
+            SupportsTranscoding = false,
             IsInfiniteStream = true,
             SupportsProbing = false,
             IsRemote = false,

@@ -86,12 +86,12 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_SupportsTranscoding()
+    public void MediaSource_TranscodingDisabled()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        Assert.True(source.SupportsTranscoding);
+        Assert.False(source.SupportsTranscoding, "Transcoding/remux disabled to force DirectPlay of HLS URL");
     }
 
     [Fact]
