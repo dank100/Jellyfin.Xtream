@@ -87,12 +87,12 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_AnalyzeDuration_Is10000ms()
+    public void MediaSource_AnalyzeDuration_Is500ms()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        Assert.Equal(10000, source.AnalyzeDurationMs);
+        Assert.Equal(500, source.AnalyzeDurationMs);
     }
 
     [Fact]
@@ -111,14 +111,14 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_HasAudioStream_WithEac3Codec()
+    public void MediaSource_HasAudioStream_WithAacCodec()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
         var audio = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio);
 
         Assert.NotNull(audio);
-        Assert.Equal("eac3", audio.Codec);
+        Assert.Equal("aac", audio.Codec);
         Assert.Equal("LC", audio.Profile);
         Assert.True(audio.Index >= 0, "Audio stream Index must be >= 0 for Jellyfin to skip probing");
         Assert.Equal(2, audio.Channels);
@@ -209,14 +209,10 @@ public class MultiplexedRestreamTests
 
         // Core properties for avoiding transcoding
         Assert.False(source.SupportsProbing, "Probing must be disabled");
-        Assert.Equal(10000, source.AnalyzeDurationMs);
+        Assert.Equal(500, source.AnalyzeDurationMs);
         Assert.True(source.SupportsDirectPlay);
         Assert.True(source.IsInfiniteStream);
         Assert.Equal("ts", source.Container);
-
-        // Transcoding must be enabled so web player can use HLS remux path
-        Assert.True(source.SupportsTranscoding, "Transcoding must be enabled for HLS remux");
-        Assert.True(source.SupportsDirectStream, "DirectStream must be enabled");
 
         // Video stream — must enable stream copy
         var video = source.MediaStreams.First(s => s.Type == MediaStreamType.Video);
@@ -229,7 +225,7 @@ public class MultiplexedRestreamTests
 
         // Audio stream — must enable stream copy
         var audio = source.MediaStreams.First(s => s.Type == MediaStreamType.Audio);
-        Assert.Equal("eac3", audio.Codec);
+        Assert.Equal("aac", audio.Codec);
         Assert.Equal(1, audio.Index);
         Assert.NotNull(audio.Channels);
         Assert.NotNull(audio.SampleRate);
