@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Disable probing, add synthetic h264+aac MediaStreams to fix Android TV codec detection",
+        "checksum": "583a0ffcc93da5a8d710e67c06227fef",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.74.0/jellyfin-xtream_0.9.74.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T07:10:14Z",
+        "version": "0.9.74.0"
+      },
+      {
         "changelog": "Fix Index=-1 from HLS probe to enable DirectStream path",
         "checksum": "9ba4ec02929dd87dacad3e7a88da5566",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.73.0/jellyfin-xtream_0.9.73.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-25T14:44:33Z",
         "version": "0.9.43.0"
-      },
-      {
-        "changelog": "Fix HLS discontinuity tags in recording playlist.\n\n- Insert #EXT-X-DISCONTINUITY between capture rounds (fixes ffmpeg exit 234)\n- 7 integration tests, 34 assertions, all pass",
-        "checksum": "062cc6d3bdf63cd87ae3e55b9ddbf0f6",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.42.0/jellyfin-xtream_0.9.42.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-25T11:44:29Z",
-        "version": "0.9.42.0"
       }
     ]
   }
