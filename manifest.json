@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Add audio channel info (stereo/48kHz) to synthetic streams to prevent unnecessary stereo→5.1 upmix transcode",
+        "checksum": "a58d7b1099578aed34b6122c109044e4",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.75.0/jellyfin-xtream_0.9.75.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-02T07:18:34Z",
+        "version": "0.9.75.0"
+      },
+      {
         "changelog": "Disable probing, add synthetic h264+aac MediaStreams to fix Android TV codec detection",
         "checksum": "583a0ffcc93da5a8d710e67c06227fef",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.74.0/jellyfin-xtream_0.9.74.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-25T18:04:02Z",
         "version": "0.9.44.0"
-      },
-      {
-        "changelog": "### Changes\n- **Persistent parallel captures**: Replaced blocking Task.WhenAll with per-channel capture tasks that start/stop dynamically\n- **Fair round-robin yield**: Reduced yield thresholds (starvation: 2, default: 3 segments) to account for ~8s ffmpeg startup overhead\n- **Parallel→sequential transition**: Clean handoff when channels are added/removed\n- **Lifecycle cleanup**: Capture tasks properly cancelled on unsubscribe, stop, and dispose\n\n### Test coverage (45 assertions)\n- Tests 1-6: Single/dual recording, keepalive, HLS playback, ffprobe/ffmpeg validation\n- Test 7: HLS discontinuity tags during round-robin\n- Test 8: Parallel stream fairness (segment ratio within 3:1)\n- Test 9: Staggered start — parallel-to-sequential transition\n\nAll tests pass with maxConnections=1 and real DW News HLS streams.",
-        "checksum": "c5dc2b15d290330e589d5100cf7eb79e",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.43.0/jellyfin-xtream_0.9.43.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-25T14:44:33Z",
-        "version": "0.9.43.0"
       }
     ]
   }
