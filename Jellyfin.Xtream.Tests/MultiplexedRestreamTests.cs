@@ -97,12 +97,12 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_Container_IsTs()
+    public void MediaSource_Container_IsHls()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
-        Assert.Equal("ts", source.Container);
+        Assert.Equal("hls", source.Container);
     }
 
     [Fact]
@@ -142,25 +142,12 @@ public class MultiplexedRestreamTests
     }
 
     [Fact]
-    public void MediaSource_SyntheticMediaStreams()
+    public void MediaSource_EmptyMediaStreams()
     {
         var restream = CreateRestream();
         var source = restream.MediaSource;
 
         Assert.NotNull(source.MediaStreams);
-        Assert.Equal(2, source.MediaStreams.Count);
-
-        var video = source.MediaStreams[0];
-        Assert.Equal(MediaStreamType.Video, video.Type);
-        Assert.Equal("h264", video.Codec);
-        Assert.Equal(0, video.Index);
-
-        var audio = source.MediaStreams[1];
-        Assert.Equal(MediaStreamType.Audio, audio.Type);
-        Assert.Equal("aac", audio.Codec);
-        Assert.Equal(1, audio.Index);
-        Assert.Equal(2, audio.Channels);
-        Assert.Equal("stereo", audio.ChannelLayout);
-        Assert.Equal(48000, audio.SampleRate);
+        Assert.Empty(source.MediaStreams);
     }
 }

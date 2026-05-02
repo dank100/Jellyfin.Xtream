@@ -72,7 +72,7 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             Path = baseUrl + hlsPath,
             EncoderPath = baseUrl + hlsPath,
             Protocol = MediaProtocol.Http,
-            Container = "ts",
+            Container = "hls",
             AnalyzeDurationMs = 500,
             SupportsDirectPlay = true,
             SupportsDirectStream = false,
@@ -80,27 +80,11 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             IsInfiniteStream = true,
             SupportsProbing = false,
             IsRemote = false,
-            MediaStreams = new List<MediaStream>
-            {
-                new MediaStream
-                {
-                    Type = MediaStreamType.Video,
-                    Index = 0,
-                    Codec = "h264",
-                    BitRate = 20_000_000,
-                    IsDefault = true,
-                },
-                new MediaStream
-                {
-                    Type = MediaStreamType.Audio,
-                    Index = 1,
-                    Codec = "aac",
-                    Channels = 2,
-                    ChannelLayout = "stereo",
-                    SampleRate = 48000,
-                    IsDefault = true,
-                },
-            },
+            // No MediaStreams reported — prevents StreamBuilder from deciding
+            // audio/video transcoding is needed based on device profile codec
+            // matching. With DirectStream+Transcoding disabled and no codec info,
+            // all clients fall through to DirectPlay of the HLS URL.
+            MediaStreams = new List<MediaStream>(),
         };
 
         OriginalStreamId = _mediaSource.Id;
@@ -138,32 +122,6 @@ public class MultiplexedRestream : ILiveStream, IDisposable
                 // since iPhone/Android natively handle HLS.
                 _mediaSource.SupportsDirectStream = false;
                 _mediaSource.SupportsTranscoding = false;
-
-                if (_mediaSource.MediaStreams is not null)
-                {
-                    int videoIdx = 0;
-                    int audioIdx = 1;
-                    foreach (var s in _mediaSource.MediaStreams)
-                    {
-                        if (s.Type == MediaStreamType.Video)
-                        {
-                            s.IsInterlaced = false;
-                            // Probe assigns Index=-1 for HLS inputs;
-                            // StreamBuilder requires Index >= 0 for DirectStream.
-                            if (s.Index < 0)
-                            {
-                                s.Index = videoIdx++;
-                            }
-                        }
-                        else if (s.Type == MediaStreamType.Audio)
-                        {
-                            if (s.Index < 0)
-                            {
-                                s.Index = audioIdx++;
-                            }
-                        }
-                    }
-                }
             }
 
             return _mediaSource!;
@@ -209,26 +167,8 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             _streamId,
             segments.Count);
 
-        // Probe the newest segment to get real codec metadata.
-        // Newest is least likely to be pruned during the probe.
-        if (segments.Count > 0)
-        {
-            var newest = segments[^1];
-            string segPath = System.IO.Path.Combine(buffer.SegmentDir, newest.Filename);
-            var probed = await _multiplexer.ProbeSegmentAsync(segPath, openCancellationToken).ConfigureAwait(false);
-            if (probed != null)
-            {
-                _mediaSource.MediaStreams = probed;
-                _logger.LogInformation(
-                    "Probed channel {StreamId}: {Streams}",
-                    _streamId,
-                    string.Join(", ", probed.ConvertAll(s => $"{s.Type}:{s.Codec} {s.Width}x{s.Height}")));
-            }
-            else
-            {
-                _logger.LogWarning("Probe failed for channel {StreamId}, using synthetic defaults", _streamId);
-            }
-        }
+        // No probing needed — empty MediaStreams prevents StreamBuilder
+        // from making codec-based transcode decisions, forcing DirectPlay.
     }
 
     /// <inheritdoc />
