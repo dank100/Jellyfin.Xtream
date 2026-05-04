@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "- Fix prod: delete index.html.gz/.br after script injection\n- Increase live edge buffer to 10s to prevent seek crash\n- Slider position correction independent of bundle patch",
+        "checksum": "d3209f2ca3227b0605589eb89caf91b5",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.84.0/jellyfin-xtream_0.9.84.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-04T17:27:53Z",
+        "version": "0.9.84.0"
+      },
+      {
         "changelog": "Fix bundle patch on prod: delete pre-compressed .gz/.br files after patching JS.",
         "checksum": "2a334a662e8792ea81802d737ae38cb9",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.83.0/jellyfin-xtream_0.9.83.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-29T15:52:35Z",
         "version": "0.9.55.0"
-      },
-      {
-        "changelog": "Persistent ffmpeg via stdin pipe for multiplexer. Eliminates ~4s per-burst overhead in sequential round-robin mode, improving throughput from ~0.6x to ~1.2x for concurrent streams.",
-        "checksum": "c5637f23dc804c804701ed681b1179c2",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.54.0/jellyfin-xtream_0.9.54.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-29T12:15:10Z",
-        "version": "0.9.54.0"
       }
     ]
   }
