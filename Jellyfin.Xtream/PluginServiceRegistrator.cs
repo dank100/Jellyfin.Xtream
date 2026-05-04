@@ -49,12 +49,11 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IMediaSourceProvider, RecordingMediaSourceProvider>();
 
         // Register global MVC action filter to intercept DynamicHls requests for recordings.
-        // Unlike IStartupFilter (which doesn't work for plugins), MvcOptions.Filters are
-        // resolved from DI and run within the existing MVC pipeline.
-        serviceCollection.AddTransient<RecordingHlsActionFilter>();
+        // Use ServiceFilter so the filter is resolved from DI on every request.
+        serviceCollection.AddScoped<RecordingHlsActionFilter>();
         serviceCollection.Configure<MvcOptions>(options =>
         {
-            options.Filters.AddService<RecordingHlsActionFilter>();
+            options.Filters.Add(new ServiceFilterAttribute(typeof(RecordingHlsActionFilter)));
         });
     }
 }

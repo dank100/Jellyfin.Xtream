@@ -44,14 +44,32 @@ public class RecordingHlsActionFilter : IActionFilter
     {
         string path = context.HttpContext.Request.Path.Value ?? string.Empty;
 
-        // Only intercept DynamicHls master/main playlist requests
+        // Only intercept DynamicHls master/main/live playlist requests
         if (!path.Contains("/master.m3u8", StringComparison.OrdinalIgnoreCase)
-            && !path.Contains("/main.m3u8", StringComparison.OrdinalIgnoreCase))
+            && !path.Contains("/main.m3u8", StringComparison.OrdinalIgnoreCase)
+            && !path.Contains("/live.m3u8", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
+        // Try both casings — ASP.NET Core QueryCollection is case-insensitive but log for debugging
         string liveStreamId = context.HttpContext.Request.Query["LiveStreamId"].ToString();
+        if (string.IsNullOrEmpty(liveStreamId))
+        {
+            liveStreamId = context.HttpContext.Request.Query["liveStreamId"].ToString();
+        }
+
+        // Also check action parameters (DynamicHls binds from query)
+        if (string.IsNullOrEmpty(liveStreamId) && context.ActionArguments.TryGetValue("liveStreamId", out var argValue))
+        {
+            liveStreamId = argValue?.ToString() ?? string.Empty;
+        }
+
+        _logger.LogInformation(
+            "RecordingHlsActionFilter matched HLS path: {Path}, LiveStreamId: {LiveStreamId}",
+            path,
+            liveStreamId ?? "(null)");
+
         if (string.IsNullOrEmpty(liveStreamId) || !liveStreamId.Contains(RecordingMarker, StringComparison.Ordinal))
         {
             return;
@@ -66,6 +84,7 @@ public class RecordingHlsActionFilter : IActionFilter
             timerId);
 
         // Short-circuit the action — redirect client to our direct HLS endpoint
+        // No ?vod=true: keep EVENT playlist so players refresh for new segments.
         string redirectUrl = $"/Xtream/Recordings/{timerId}/stream.m3u8";
         context.Result = new RedirectResult(redirectUrl, permanent: false);
     }

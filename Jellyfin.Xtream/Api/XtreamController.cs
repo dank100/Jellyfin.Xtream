@@ -354,10 +354,22 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             }
         }
 
+        // Add #EXT-X-START:TIME-OFFSET=0 for active recordings so all clients
+        // (ExoPlayer, AVPlayer) start playback from the beginning of the EVENT playlist
+        // while still refreshing for new segments (no ENDLIST).
+        bool isActive = recordingEngine.IsRecordingActive(timerId);
+        if (isActive && !vod)
+        {
+            int insertIdx = result.FindIndex(l => l.StartsWith("#EXT-X-TARGETDURATION", StringComparison.Ordinal));
+            if (insertIdx >= 0)
+            {
+                result.Insert(insertIdx + 1, "#EXT-X-START:TIME-OFFSET=0,PRECISE=YES");
+            }
+        }
+
         // VOD mode (used as ffmpeg input): always add ENDLIST so ffmpeg starts from
         // segment 0 instead of jumping to the live edge of the EVENT playlist.
         // Normal mode: keep EVENT for active recordings so HLS.js polls for new segments.
-        bool isActive = recordingEngine.IsRecordingActive(timerId);
         if ((vod || !isActive) && result.Count > 0 && !result.Any(l => l.Contains("#EXT-X-ENDLIST", StringComparison.Ordinal)))
         {
             if (!isActive)
