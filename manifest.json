@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix bundle patch on prod: delete pre-compressed .gz/.br files after patching JS.",
+        "checksum": "2a334a662e8792ea81802d737ae38cb9",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.83.0/jellyfin-xtream_0.9.83.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-04T14:09:36Z",
+        "version": "0.9.83.0"
+      },
+      {
         "changelog": "## DVR Seekbar for Recording Channels\n\n- Direct HLS seeking with elapsed time clamp\n- PlaybackRate lock and live edge buffer\n- Bundle patch for correct EPG time display\n- Auto-detection of recording channels",
         "checksum": "f9684ac5d8fc56004aa29a0f07addb5f",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.82.0/jellyfin-xtream_0.9.82.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-29T12:15:10Z",
         "version": "0.9.54.0"
-      },
-      {
-        "changelog": "### Fixes\n- **True direct play**: Set `Container=ts` and `Timestamp=Valid` on live TV MediaSourceInfo — enables Android TV (ExoPlayer) to direct play without ffmpeg remux\n- Previously `Container` was null and `Timestamp` unset, causing StreamBuilder to always choose remux",
-        "checksum": "c3c37c4321301181f8c5907c28d87973",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.52.0/jellyfin-xtream_0.9.52.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-29T08:38:50Z",
-        "version": "0.9.52.0"
       }
     ]
   }
