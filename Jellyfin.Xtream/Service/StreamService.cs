@@ -400,9 +400,10 @@ public partial class StreamService(IXtreamClient xtreamClient)
         }
 
         bool isLive = type == StreamType.Live;
+        bool isCatchUp = type == StreamType.CatchUp;
         return new MediaSourceInfo()
         {
-            Container = extension ?? (isLive ? "ts" : null),
+            Container = extension ?? (isLive || isCatchUp ? "ts" : null),
             EncoderProtocol = MediaProtocol.Http,
             Id = ToGuid(MediaSourcePrefix, (int)type, id, 0).ToString(),
             IsInfiniteStream = isLive,
@@ -421,7 +422,7 @@ public partial class StreamService(IXtreamClient xtreamClient)
                     Height = videoInfo?.Height,
                     Index = videoInfo?.Index ?? -1,
                     IsAVC = videoInfo?.IsAVC,
-                    IsInterlaced = true,
+                    IsInterlaced = isLive,
                     Level = videoInfo?.Level,
                     PixelFormat = videoInfo?.PixelFormat,
                     Profile = videoInfo?.Profile,

@@ -18,6 +18,7 @@ using Jellyfin.Xtream.Providers;
 using Jellyfin.Xtream.Service;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Controller.Providers;
@@ -44,5 +45,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<RecordingEngine>());
         serviceCollection.AddSingleton<ConnectionMultiplexer>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<ConnectionMultiplexer>());
+        serviceCollection.AddSingleton<IMediaSourceProvider, RecordingMediaSourceProvider>();
     }
 }

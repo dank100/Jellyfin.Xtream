@@ -146,6 +146,9 @@ public class RecordingEngine : IHostedService, IDisposable
         }
 
         _ = Task.Run(() => RecordStreamAsync(recording));
+
+        // Trigger guide refresh so the virtual recording channel appears immediately.
+        TriggerGuideRefresh();
     }
 
     /// <summary>
@@ -168,6 +171,9 @@ public class RecordingEngine : IHostedService, IDisposable
             };
 
             _logger.LogInformation("Recording cancelled for timer {TimerId}", timerId);
+
+            // Trigger guide refresh so the virtual recording channel is removed.
+            TriggerGuideRefresh();
         }
     }
 

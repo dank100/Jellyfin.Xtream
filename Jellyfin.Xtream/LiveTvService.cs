@@ -27,7 +27,9 @@ using Jellyfin.Xtream.Service;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
+using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Session;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -53,8 +55,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     private readonly Dictionary<string, TimerInfo> _timers = timerStore.LoadTimers();
     private readonly Dictionary<string, SeriesTimerInfo> _seriesTimers = timerStore.LoadSeriesTimers();
 
-    // Maps recording channel GUIDs to timer IDs for reverse lookup (unused — recordings are library-only)
-    // private readonly Dictionary<string, string> _recordingChannelMap = new();
+    private readonly Dictionary<string, string> _recordingChannelMap = new();
 
     // Lazy to break circular dependency (RecordingEngine → LiveTvService → RecordingEngine)
     private RecordingEngine? _recordingEngine;
@@ -115,6 +116,19 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 ImageUrl = channel.StreamIcon,
                 Name = parsed.Title,
                 Tags = parsed.Tags,
+            });
+        }
+
+        // Add virtual channels for active recordings
+        foreach (var rec in RecordingEngine.GetReadyRecordingsSnapshot())
+        {
+            string channelGuid = StreamService.ToGuid(StreamService.RecordingPrefix, rec.Timer.Id.GetHashCode(StringComparison.Ordinal) & 0x7FFFFFFF, 0, 0).ToString();
+            _recordingChannelMap[channelGuid] = rec.Timer.Id;
+            items.Add(new ChannelInfo()
+            {
+                Id = channelGuid,
+                Name = $"● REC: {rec.Timer.Name}",
+                Number = "0",
             });
         }
 
@@ -246,6 +260,42 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     {
         Guid guid = Guid.Parse(channelId);
         StreamService.FromGuid(guid, out int prefix, out int streamId, out int _, out int _);
+
+        // Virtual recording channels: return a single programme spanning the EPG schedule
+        if (prefix == StreamService.RecordingPrefix && _recordingChannelMap.TryGetValue(channelId, out string? timerId))
+        {
+            var activeRec = RecordingEngine.GetActiveRecording(timerId);
+            if (activeRec != null)
+            {
+                var timer = activeRec.Timer;
+                // Use the actual recording start time so the seekbar spans recorded content only.
+                var start = activeRec.StartedUtc;
+                var end = timer.EndDate + TimeSpan.FromSeconds(timer.PostPaddingSeconds);
+
+                // Ensure the programme always covers "now" while the recording is active.
+                // If the scheduled end has passed, extend it so the live TV slider stays in
+                // time-of-day mode (Z = true) and the seekbar remains interactive.
+                if (end < DateTime.UtcNow)
+                {
+                    end = DateTime.UtcNow.AddMinutes(30);
+                }
+
+                return new[]
+                {
+                    new ProgramInfo
+                    {
+                        Id = channelId + "_prog",
+                        ChannelId = channelId,
+                        StartDate = start,
+                        EndDate = end,
+                        Name = timer.Name,
+                    },
+                };
+            }
+
+            return Enumerable.Empty<ProgramInfo>();
+        }
+
         if (prefix != StreamService.LiveTvPrefix)
         {
             throw new ArgumentException("Unsupported channel");
@@ -328,6 +378,29 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     {
         Guid guid = Guid.Parse(channelId);
         StreamService.FromGuid(guid, out int prefix, out int channel, out int _, out int _);
+
+        // Virtual recording channel: return a RecordingRestream pointing to the recording's HLS playlist
+        if (prefix == StreamService.RecordingPrefix && _recordingChannelMap.TryGetValue(channelId, out string? timerId))
+        {
+            var activeRec = RecordingEngine.GetActiveRecording(timerId);
+            if (activeRec == null)
+            {
+                throw new InvalidOperationException($"Recording {timerId} is no longer active");
+            }
+
+            var restream = new RecordingRestream(
+                appHost,
+                logger,
+                RecordingEngine,
+                ConnectionMultiplexer,
+                timerId,
+                activeRec.Timer);
+            await restream.Open(cancellationToken).ConfigureAwait(false);
+            restream.ConsumerCount++;
+
+            return restream;
+        }
+
         if (prefix != StreamService.LiveTvPrefix)
         {
             throw new ArgumentException("Unsupported channel");
