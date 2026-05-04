@@ -366,6 +366,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             foreach (string file in Directory.GetFiles(webPath, "main.jellyfin.bundle.js*"))
             {
+                // Skip pre-compressed files — they can't be read as text
+                if (file.EndsWith(".gz", StringComparison.Ordinal) || file.EndsWith(".br", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 string content = File.ReadAllText(file);
 
                 // If already patched with a previous version, revert first
@@ -390,6 +396,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 {
                     content = content.Replace(Original, Patched, StringComparison.Ordinal);
                     File.WriteAllText(file, content);
+
+                    // Remove pre-compressed companions so the server re-serves the patched .js
+                    foreach (string ext in new[] { ".gz", ".br" })
+                    {
+                        string compressed = file + ext;
+                        if (File.Exists(compressed))
+                        {
+                            File.Delete(compressed);
+                        }
+                    }
                 }
             }
         }
