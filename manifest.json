@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix action filter to intercept live.m3u8 for recording channels. Adds EXT-X-START for start-from-beginning on all clients. Confirmed working on web.",
+        "checksum": "40b6b2d5ef59b4d5271798febe94ab34",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.86.0/jellyfin-xtream_0.9.86.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-04T19:41:33Z",
+        "version": "0.9.86.0"
+      },
+      {
         "changelog": "Bypass ffmpeg transcoder for recording channels via MVC action filter redirect to direct HLS endpoint. Removes all JS injection. Forces codec copy for interlaced content.",
         "checksum": "1029c1049af3d5e90903d7bc8dee3023",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.85.0/jellyfin-xtream_0.9.85.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-29T19:40:23Z",
         "version": "0.9.57.0"
-      },
-      {
-        "changelog": "Fix transcoding caused by missing codec metadata when probing is disabled.\n\nChanges:\n- Provide H264 High + AAC LC MediaStreams with proper Index values\n- Jellyfin StreamBuilder can now determine direct play/copy is possible\n- Prevents unnecessary H264→HEVC software transcode (was 0.4x realtime)\n\nCombined with v0.9.55.0 (SupportsProbing=false):\n- No probe cycle (no open→close→reopen)\n- AnalyzeDurationMs=500 preserved (not overridden to 3000)\n- Direct play/copy instead of transcode\n- Faster startup (~5s vs ~14s)",
-        "checksum": "0fea05b872febae28494d406ba65bdcd",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.56.0/jellyfin-xtream_0.9.56.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-29T16:45:43Z",
-        "version": "0.9.56.0"
       }
     ]
   }
