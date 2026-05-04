@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Bypass ffmpeg transcoder for recording channels via MVC action filter redirect to direct HLS endpoint. Removes all JS injection. Forces codec copy for interlaced content.",
+        "checksum": "1029c1049af3d5e90903d7bc8dee3023",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.85.0/jellyfin-xtream_0.9.85.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-04T18:48:18Z",
+        "version": "0.9.85.0"
+      },
+      {
         "changelog": "- Fix prod: delete index.html.gz/.br after script injection\n- Increase live edge buffer to 10s to prevent seek crash\n- Slider position correction independent of bundle patch",
         "checksum": "d3209f2ca3227b0605589eb89caf91b5",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.84.0/jellyfin-xtream_0.9.84.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-29T16:45:43Z",
         "version": "0.9.56.0"
-      },
-      {
-        "changelog": "Fix Android TV startup error by skipping Jellyfin probe cycle.\n\n- Set SupportsProbing=false → eliminates open→probe→close→reopen cycle\n- Preserves AnalyzeDurationMs=500 (Jellyfin was overriding to 3000)\n- Reduce minSegments from 3 to 2\n- Faster poll interval (200ms vs 500ms)\n\nExpected: ~5s faster startup, no more error toast on Android TV.",
-        "checksum": "db7ae6bad4b016049b1e4ba0869012b8",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.55.0/jellyfin-xtream_0.9.55.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-29T15:52:35Z",
-        "version": "0.9.55.0"
       }
     ]
   }
