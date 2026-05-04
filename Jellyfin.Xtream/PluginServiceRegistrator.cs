@@ -22,6 +22,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Controller.Providers;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Jellyfin.Xtream;
@@ -46,5 +47,14 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ConnectionMultiplexer>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<ConnectionMultiplexer>());
         serviceCollection.AddSingleton<IMediaSourceProvider, RecordingMediaSourceProvider>();
+
+        // Register global MVC action filter to intercept DynamicHls requests for recordings.
+        // Unlike IStartupFilter (which doesn't work for plugins), MvcOptions.Filters are
+        // resolved from DI and run within the existing MVC pipeline.
+        serviceCollection.AddTransient<RecordingHlsActionFilter>();
+        serviceCollection.Configure<MvcOptions>(options =>
+        {
+            options.Filters.AddService<RecordingHlsActionFilter>();
+        });
     }
 }

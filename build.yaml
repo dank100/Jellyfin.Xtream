@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.9.84.0"
+version: "0.9.85.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -12,5 +12,6 @@ owner: "Kevinjil"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  DVR seekbar for recording channels: direct HLS seeking, elapsed time
-  clamp, playbackRate lock, bundle patch for correct EPG time display.
+  Recording channels: bypass ffmpeg transcoder via MVC action filter redirect
+  to direct HLS endpoint. Removes all JS injection. Forces IsInterlaced=false
+  after probe to prevent yadif re-encode when transcoder is still used.

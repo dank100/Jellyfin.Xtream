@@ -105,34 +105,26 @@ public partial class RecordingMediaSourceProvider : IMediaSourceProvider
             timer.Name,
             TimeSpan.FromTicks(durationTicks));
 
-        // Use the growing TS file directly — ffmpeg reads from byte 0 and can seek
-        // with -ss. The HLS EVENT playlist starts from the live edge which prevents
-        // backward seeking.
-        string? tsPath = _recordingEngine.GetTsFilePath(timerId);
-        if (string.IsNullOrEmpty(tsPath))
-        {
-            _logger.LogWarning("No TS file path for active recording {TimerId}", timerId);
-            return Task.FromResult<IEnumerable<MediaSourceInfo>>(Array.Empty<MediaSourceInfo>());
-        }
+        // Point directly at the HLS m3u8 playlist URL — all clients (ExoPlayer, AVPlayer,
+        // HLS.js) can seek natively via segment-level jumps in an EVENT playlist.
+        string baseUrl = _appHost.GetApiUrlForLocalAccess()?.TrimEnd('/') ?? string.Empty;
+        string hlsUrl = $"{baseUrl}/Xtream/Recordings/{timerId}/stream.m3u8";
 
         var source = new MediaSourceInfo
         {
             Id = $"xtream_rec_{timerId}",
-            Path = tsPath,
-            EncoderPath = tsPath,
-            Protocol = MediaProtocol.File,
-            Container = "ts",
+            Path = hlsUrl,
+            Protocol = MediaProtocol.Http,
+            Container = "hls",
             RunTimeTicks = durationTicks,
             AnalyzeDurationMs = 500,
             IsInfiniteStream = false,
             SupportsDirectPlay = true,
-            SupportsDirectStream = true,
-            SupportsTranscoding = true,
+            SupportsDirectStream = false,
+            SupportsTranscoding = false,
             SupportsProbing = false,
             IsRemote = false,
-            RequiresOpening = true,
-            RequiresClosing = true,
-            OpenToken = timerId,
+            ReadAtNativeFramerate = false,
             MediaStreams = new List<MediaStream>
             {
                 new MediaStream

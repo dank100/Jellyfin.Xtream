@@ -318,10 +318,11 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     /// Anonymous access allowed — the timer ID acts as an unguessable access token.
     /// </summary>
     /// <param name="timerId">The timer ID of the recording.</param>
+    /// <param name="vod">When true, adds EXT-X-ENDLIST so ffmpeg starts from segment 0.</param>
     /// <returns>The m3u8 playlist file.</returns>
     [AllowAnonymous]
     [HttpGet("Recordings/{timerId}/stream.m3u8")]
-    public ActionResult GetRecordingPlaylist(string timerId)
+    public ActionResult GetRecordingPlaylist(string timerId, [FromQuery] bool vod = false)
     {
         // timerId is not used to build paths directly — GetHlsDirectory performs a dictionary
         // lookup that only returns paths the plugin itself created for active recordings.
@@ -353,17 +354,20 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
             }
         }
 
-        // When the recording is still active, serve an EVENT playlist WITHOUT
-        // #EXT-X-ENDLIST so ffmpeg/hls.js poll for new segments as the recording grows.
-        // Once the recording finishes, add ENDLIST + START tag for VOD-style seeking.
+        // VOD mode (used as ffmpeg input): always add ENDLIST so ffmpeg starts from
+        // segment 0 instead of jumping to the live edge of the EVENT playlist.
+        // Normal mode: keep EVENT for active recordings so HLS.js polls for new segments.
         bool isActive = recordingEngine.IsRecordingActive(timerId);
-        if (!isActive && result.Count > 0 && !result.Any(l => l.Contains("#EXT-X-ENDLIST", StringComparison.Ordinal)))
+        if ((vod || !isActive) && result.Count > 0 && !result.Any(l => l.Contains("#EXT-X-ENDLIST", StringComparison.Ordinal)))
         {
-            // Insert START tag after the header (before first segment)
-            int insertIdx = result.FindIndex(l => l.StartsWith("#EXTINF:", StringComparison.Ordinal));
-            if (insertIdx > 0)
+            if (!isActive)
             {
-                result.Insert(insertIdx, "#EXT-X-START:TIME-OFFSET=-12,PRECISE=YES");
+                // Insert START tag for finished recordings
+                int insertIdx = result.FindIndex(l => l.StartsWith("#EXTINF:", StringComparison.Ordinal));
+                if (insertIdx > 0)
+                {
+                    result.Insert(insertIdx, "#EXT-X-START:TIME-OFFSET=-12,PRECISE=YES");
+                }
             }
 
             result.Add("#EXT-X-ENDLIST");

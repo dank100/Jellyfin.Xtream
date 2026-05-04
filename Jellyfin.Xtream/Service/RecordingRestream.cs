@@ -76,25 +76,25 @@ public class RecordingRestream : ILiveStream, IDisposable
         var end = timer.EndDate + TimeSpan.FromSeconds(timer.PostPaddingSeconds);
         long durationTicks = (end - start).Ticks;
 
-        // Use the growing TS file directly — ffmpeg reads from byte 0 and can seek
-        // with -ss anywhere in the file. The HLS EVENT playlist starts from the live
-        // edge which prevents backward seeking.
-        string tsPath = recordingEngine.GetTsFilePath(timerId)
-            ?? throw new InvalidOperationException($"No TS file for recording {timerId}");
-
         // Encode recording start epoch ms in the Name so the web client JS can read it
-        // from the PlaybackInfo response (DOM-based detection fails because Jellyfin
-        // clears startTimeText/endTimeText for live TV channels).
         long startEpochMs = (long)(start - DateTime.UnixEpoch).TotalMilliseconds;
+
+        // Point directly at the HLS m3u8 playlist URL — all clients (ExoPlayer, AVPlayer,
+        // HLS.js) can seek natively via segment-level jumps in an EVENT playlist.
+        string baseUrl = appHost.GetApiUrlForLocalAccess()?.TrimEnd('/') ?? string.Empty;
+        string hlsUrl = $"{baseUrl}/Xtream/Recordings/{timerId}/stream.m3u8";
+        // EncoderPath uses ?vod=true to get a playlist with #EXT-X-ENDLIST so ffmpeg
+        // starts reading from segment 0 (not the live edge of the EVENT playlist).
+        string encoderUrl = $"{hlsUrl}?vod=true";
 
         _mediaSource = new MediaSourceInfo
         {
             Id = $"xtream_rec_{timerId}",
             Name = $"xtream_rec_start_{startEpochMs}",
-            Path = tsPath,
-            EncoderPath = tsPath,
-            Protocol = MediaProtocol.File,
-            Container = "ts",
+            Path = hlsUrl,
+            EncoderPath = encoderUrl,
+            Protocol = MediaProtocol.Http,
+            Container = "hls",
             RunTimeTicks = durationTicks,
             AnalyzeDurationMs = 500,
             SupportsDirectPlay = true,
@@ -103,6 +103,7 @@ public class RecordingRestream : ILiveStream, IDisposable
             IsInfiniteStream = false,
             SupportsProbing = false,
             IsRemote = false,
+            ReadAtNativeFramerate = false,
             MediaStreams = new List<MediaStream>
             {
                 new MediaStream
@@ -242,6 +243,17 @@ public class RecordingRestream : ILiveStream, IDisposable
             var probed = await _multiplexer.ProbeSegmentAsync(newestSegment, ct).ConfigureAwait(false);
             if (probed != null)
             {
+                // Force IsInterlaced=false so Jellyfin's StreamBuilder uses codec copy
+                // instead of yadif+libx264 re-encode (which runs at ~1x speed for 1080i).
+                // The client player handles deinterlacing natively.
+                foreach (var stream in probed)
+                {
+                    if (stream.Type == MediaStreamType.Video)
+                    {
+                        stream.IsInterlaced = false;
+                    }
+                }
+
                 _mediaSource.MediaStreams = probed;
                 _logger.LogInformation(
                     "Probed recording {TimerId}: {Streams}",
