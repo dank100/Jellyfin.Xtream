@@ -264,7 +264,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                         var target = pct * epgDurSec;
                         // Clamp: can't seek past elapsed time or available duration
                         var elapsedSec = startMs ? (Date.now() - startMs) / 1000 : 0;
-                        var maxSec = Math.min(elapsedSec, video.duration > 10 ? video.duration - 5 : elapsedSec);
+                        var maxSec = Math.min(elapsedSec, video.duration > 15 ? video.duration - 10 : elapsedSec);
                         if (maxSec > 0 && target > maxSec) {
                             target = maxSec;
                             slider.value = (target / epgDurSec) * 100;
@@ -278,20 +278,25 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                         if (!slider || slider.__xSeek) return;
                         slider.__xSeek = true;
 
+                        // Track dragging so interval doesn't fight with user
+                        slider.addEventListener('pointerdown', function() { slider.__xDragging = true; });
+                        slider.addEventListener('touchstart', function() { slider.__xDragging = true; });
+
                         // Intercept change: block Jellyfin's handler, seek directly in HLS
                         slider.addEventListener('change', function(e) {
                             if (!isRecording) return;
                             doSeek(slider, e);
+                            slider.__xDragging = false;
                         }, true);
 
                         // Fallback: pointerup/touchend in case change doesn't fire
                         slider.addEventListener('pointerup', function() {
                             if (!isRecording) return;
-                            setTimeout(function() { doSeek(slider, null); }, 50);
+                            setTimeout(function() { doSeek(slider, null); slider.__xDragging = false; }, 50);
                         });
                         slider.addEventListener('touchend', function() {
                             if (!isRecording) return;
-                            setTimeout(function() { doSeek(slider, null); }, 50);
+                            setTimeout(function() { doSeek(slider, null); slider.__xDragging = false; }, 50);
                         });
 
                         console.log('[X] slider seek attached');
@@ -316,6 +321,18 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                                 s.style.pointerEvents = 'auto';
                                 var c = s.closest('.osdPositionSliderContainer');
                                 if (c) c.style.pointerEvents = 'auto';
+                                // Correct slider position: video.currentTime / epgDuration
+                                var startMs = window.__xtreamRecStartMs;
+                                var endMs = window.__xtreamRecEndMs;
+                                if (v && startMs && endMs) {
+                                    var epgDurSec = (endMs - startMs) / 1000;
+                                    if (epgDurSec > 0 && !s.__xDragging) {
+                                        var correctPct = (v.currentTime / epgDurSec) * 100;
+                                        if (correctPct < 0) correctPct = 0;
+                                        if (correctPct > 100) correctPct = 100;
+                                        s.value = correctPct;
+                                    }
+                                }
                             }
                         } catch(ex) { console.log('[X-ERR]', ex.message); }
                     }, 200);
@@ -337,6 +354,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
             html = html.Insert(bodyClose, Script);
             File.WriteAllText(indexPath, html);
+
+            // Remove pre-compressed companions so the server serves the patched HTML
+            foreach (string ext in new[] { ".gz", ".br" })
+            {
+                string compressed = indexPath + ext;
+                if (File.Exists(compressed))
+                {
+                    File.Delete(compressed);
+                }
+            }
         }
         catch (Exception)
         {
