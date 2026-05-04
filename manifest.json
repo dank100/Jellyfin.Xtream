@@ -8,12 +8,12 @@
     "owner": "Kevinjil",
     "versions": [
       {
-        "changelog": "## DVR Seekbar for Recording Channels\n\n- **Direct HLS seeking** — blocks Jellyfin's native live TV seek (which restarted the transcode and reset to position 0) and seeks directly within HLS EVENT playlist segments\n- **Elapsed time clamp** — prevents seeking past current time; slider snaps back\n- **Live edge buffer** — stays 5s from HLS live edge to prevent crash\n- **Removed pause/unpause hack** — no longer needed for CanSeek\n- **PlaybackRate locked to 1** — prevents HLS.js catch-up acceleration\n- **RecordingRestream** — serves recording TS file from byte 0 via FileStream\n- **Bundle patch** — playbackStartTimeTicks returns programme start time so slider shows correct EPG time range\n- **Fetch interception** — detects recording channels and configures seekbar automatically",
-        "checksum": "edb854e52ce8e3a3fe6d731b9aafb29c",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.82.0/jellyfin-xtream_0.9.81.0.zip",
+        "changelog": "## DVR Seekbar for Recording Channels\n\n- Direct HLS seeking with elapsed time clamp\n- PlaybackRate lock and live edge buffer\n- Bundle patch for correct EPG time display\n- Auto-detection of recording channels",
+        "checksum": "f9684ac5d8fc56004aa29a0f07addb5f",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.82.0/jellyfin-xtream_0.9.82.0.zip",
         "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-04T13:06:19Z",
-        "version": "0.9.81.0"
+        "timestamp": "2026-05-04T13:17:30Z",
+        "version": "0.9.82.0"
       },
       {
         "changelog": "Revert to v0.9.76 approach: no getter overrides, proper MediaStreams. iPhone DirectPlays, Android TV copy-mode remux.",
