@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix web seeking (revert PDT tags). Skip redirect for Android TV — let Jellyfin remux for seekbar support.",
+        "checksum": "083955caf542da9584354eae50096083",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.88.0/jellyfin-xtream_0.9.88.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-06T07:17:10Z",
+        "version": "0.9.88.0"
+      },
+      {
         "changelog": "Add EXT-X-PROGRAM-DATE-TIME tags for Android TV backward seeking in EVENT playlists. ExoPlayer uses these to determine the full seekable range.",
         "checksum": "52018c51e470748040dd8ca330fc7d75",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.87.0/jellyfin-xtream_0.9.87.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-04-29T20:05:08Z",
         "version": "0.9.59.0"
-      },
-      {
-        "changelog": "Fix iOS/Swiftfin transcoding: remove framerate and lower H264 level to prevent StreamBuilder from choosing AV1 transcode over stream copy.",
-        "checksum": "c9a9f68c677ddf00a6e4665e784836a6",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.58.0/jellyfin-xtream_0.9.58.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-04-29T19:59:50Z",
-        "version": "0.9.58.0"
       }
     ]
   }
