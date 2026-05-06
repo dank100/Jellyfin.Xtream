@@ -75,6 +75,18 @@ public class RecordingHlsActionFilter : IActionFilter
             return;
         }
 
+        // Don't redirect Android TV clients — ExoPlayer can't seek backward in live EVENT
+        // playlists. Let Jellyfin handle it normally (remux) which provides a seekbar.
+        string userAgent = context.HttpContext.Request.Headers["User-Agent"].ToString();
+        if (userAgent.Contains("AndroidTV", StringComparison.OrdinalIgnoreCase)
+            || userAgent.Contains("Android TV", StringComparison.OrdinalIgnoreCase)
+            || userAgent.Contains("org.jellyfin.androidtv", StringComparison.OrdinalIgnoreCase)
+            || userAgent.Contains("ExoPlayer", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Skipping redirect for Android TV client: {UserAgent}", userAgent);
+            return;
+        }
+
         // Extract timerId from LiveStreamId: "{hash}_{hash}_xtream_rec_{timerId}"
         int markerIdx = liveStreamId.IndexOf(RecordingMarker, StringComparison.Ordinal);
         string timerId = liveStreamId.Substring(markerIdx + RecordingMarker.Length);
