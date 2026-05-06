@@ -340,12 +340,65 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
         }
 
         string[] lines = System.IO.File.ReadAllLines(playlistPath);
+
+        bool isActive = recordingEngine.IsRecordingActive(timerId);
+
+        // Get the recording start time for PROGRAM-DATE-TIME tags
+        DateTime? recordingStartUtc = null;
+        var activeRec = recordingEngine.GetActiveRecording(timerId);
+        if (activeRec != null)
+        {
+            recordingStartUtc = activeRec.StartedUtc;
+        }
+        else
+        {
+            // For finished recordings, derive start from the first segment file's creation time
+            string firstSeg = Path.Combine(hlsDir, "seg_00000.ts");
+            if (System.IO.File.Exists(firstSeg))
+            {
+                recordingStartUtc = System.IO.File.GetCreationTimeUtc(firstSeg);
+            }
+        }
 #pragma warning restore CA3003
 
         var result = new List<string>();
+        double cumulativeSeconds = 0;
+        bool needPdt = true; // inject PDT before the first segment
+
         foreach (string line in lines)
         {
+            if (line == "#EXT-X-DISCONTINUITY")
+            {
+                result.Add(line);
+                needPdt = true; // re-sync PDT after discontinuity
+                continue;
+            }
+
+            // Inject PROGRAM-DATE-TIME before segments (after EXTINF)
+            if (needPdt && recordingStartUtc.HasValue && line.StartsWith("#EXTINF:", StringComparison.Ordinal))
+            {
+                var pdtTime = recordingStartUtc.Value.AddSeconds(cumulativeSeconds);
+                result.Add($"#EXT-X-PROGRAM-DATE-TIME:{pdtTime:yyyy-MM-ddTHH:mm:ss.fffZ}");
+                needPdt = false;
+            }
+
             result.Add(line);
+
+            // Track cumulative duration for PDT calculation
+            if (line.StartsWith("#EXTINF:", StringComparison.Ordinal))
+            {
+                var durationStr = line.AsSpan(8);
+                int commaIdx = durationStr.IndexOf(',');
+                if (commaIdx > 0)
+                {
+                    durationStr = durationStr[..commaIdx];
+                }
+
+                if (double.TryParse(durationStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double dur))
+                {
+                    cumulativeSeconds += dur;
+                }
+            }
 
             // Rewrite segment filenames to route through the API
             if (!line.StartsWith('#') && line.StartsWith("seg_", StringComparison.Ordinal))
@@ -357,7 +410,6 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
         // Add #EXT-X-START:TIME-OFFSET=0 for active recordings so all clients
         // (ExoPlayer, AVPlayer) start playback from the beginning of the EVENT playlist
         // while still refreshing for new segments (no ENDLIST).
-        bool isActive = recordingEngine.IsRecordingActive(timerId);
         if (isActive && !vod)
         {
             int insertIdx = result.FindIndex(l => l.StartsWith("#EXT-X-TARGETDURATION", StringComparison.Ordinal));
