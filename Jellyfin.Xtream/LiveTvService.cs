@@ -330,6 +330,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 int epgId = 0;
                 foreach (var prog in programmes)
                 {
+                    var seriesInfo = EpgSeriesIdentifier.Parse(prog.Title, prog.Description);
                     items.Add(new()
                     {
                         Id = StreamService.ToGuid(StreamService.EpgPrefix, streamId, epgId++, 0).ToString(),
@@ -339,6 +340,12 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                         Name = prog.Title,
                         Overview = prog.Description,
                         ImageUrl = prog.Icon,
+                        IsSeries = seriesInfo.IsSeries,
+                        SeriesId = seriesInfo.IsSeries ? seriesInfo.SeriesId : null,
+                        ShowId = seriesInfo.IsSeries ? seriesInfo.SeriesId : null,
+                        SeasonNumber = seriesInfo.SeasonNumber,
+                        EpisodeNumber = seriesInfo.EpisodeNumber,
+                        EpisodeTitle = seriesInfo.EpisodeTitle,
                     });
                 }
             }
@@ -347,6 +354,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                 EpgListings epgs = await xtreamClient.GetEpgInfoAsync(plugin.Creds, streamId, cancellationToken).ConfigureAwait(false);
                 foreach (EpgInfo epg in epgs.Listings)
                 {
+                    var seriesInfo = EpgSeriesIdentifier.Parse(epg.Title, epg.Description);
                     items.Add(new()
                     {
                         Id = StreamService.ToGuid(StreamService.EpgPrefix, streamId, epg.Id, 0).ToString(),
@@ -355,6 +363,12 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                         EndDate = epg.End + epgShift,
                         Name = epg.Title,
                         Overview = epg.Description,
+                        IsSeries = seriesInfo.IsSeries,
+                        SeriesId = seriesInfo.IsSeries ? seriesInfo.SeriesId : null,
+                        ShowId = seriesInfo.IsSeries ? seriesInfo.SeriesId : null,
+                        SeasonNumber = seriesInfo.SeasonNumber,
+                        EpisodeNumber = seriesInfo.EpisodeNumber,
+                        EpisodeTitle = seriesInfo.EpisodeTitle,
                     });
                 }
             }
