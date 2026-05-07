@@ -54,6 +54,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 {
     private readonly Dictionary<string, TimerInfo> _timers = timerStore.LoadTimers();
     private readonly Dictionary<string, SeriesTimerInfo> _seriesTimers = timerStore.LoadSeriesTimers();
+    private readonly Dictionary<string, EpisodeHighWaterMark> _highWaterMarks = timerStore.LoadHighWaterMarks();
 
     private readonly Dictionary<string, string> _recordingChannelMap = new();
 
@@ -571,8 +572,8 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                     continue;
                 }
 
-                // Check RecordNewOnly: skip if we already have a timer for same season+episode
-                if (seriesTimer.RecordNewOnly && IsDuplicateEpisode(seriesTimer, programme))
+                // Check RecordNewOnly: skip episodes at or below the high-water mark
+                if (seriesTimer.RecordNewOnly && !IsNewEpisode(seriesTimer.Id, programme))
                 {
                     continue;
                 }
@@ -610,6 +611,9 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                     PersistTimers();
                 }
 
+                // Advance the high-water mark
+                AdvanceHighWaterMark(seriesTimer.Id, programme.SeasonNumber, programme.EpisodeNumber);
+
                 logger.LogInformation(
                     "Series timer '{SeriesName}' scheduled recording: {ProgramName} on {Channel} at {Start}",
                     seriesTimer.Name,
@@ -637,35 +641,63 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         return false;
     }
 
-    private bool IsDuplicateEpisode(SeriesTimerInfo seriesTimer, ProgramInfo programme)
+    /// <summary>
+    /// Determines if a programme is a new episode beyond the high-water mark.
+    /// Returns true only if the episode is strictly newer (higher season, or same season with higher episode).
+    /// </summary>
+    private bool IsNewEpisode(string seriesTimerId, ProgramInfo programme)
     {
-        if (!programme.SeasonNumber.HasValue && !programme.EpisodeNumber.HasValue)
+        if (!programme.SeasonNumber.HasValue || !programme.EpisodeNumber.HasValue)
         {
-            // Without season/episode data, we can't determine duplicates
+            // Without season+episode data we can't determine if it's new; skip it to be safe
             return false;
         }
 
-        lock (_timers)
+        int season = programme.SeasonNumber.Value;
+        int episode = programme.EpisodeNumber.Value;
+
+        if (!_highWaterMarks.TryGetValue(seriesTimerId, out var mark))
         {
-            return _timers.Values.Any(t =>
-                t.SeriesTimerId == seriesTimer.Id &&
-                t.Id != $"series_{seriesTimer.Id}_{programme.Id}" &&
-                IsSameEpisode(t, programme));
+            // No recordings yet for this series — this is a new episode
+            return true;
         }
+
+        // New if: higher season, or same season with higher episode number
+        if (season > mark.Season)
+        {
+            return true;
+        }
+
+        return season == mark.Season && episode > mark.Episode;
     }
 
-    private static bool IsSameEpisode(TimerInfo existingTimer, ProgramInfo programme)
+    /// <summary>
+    /// Advances the high-water mark for a series timer when a new episode is scheduled.
+    /// </summary>
+    private void AdvanceHighWaterMark(string seriesTimerId, int? seasonNumber, int? episodeNumber)
     {
-        // Parse series info from the existing timer's name + overview to compare
-        var existingInfo = EpgSeriesIdentifier.Parse(existingTimer.Name ?? string.Empty, existingTimer.Overview);
-        if (!existingInfo.IsSeries)
+        if (!seasonNumber.HasValue || !episodeNumber.HasValue)
         {
-            return false;
+            return;
         }
 
-        return existingInfo.SeasonNumber == programme.SeasonNumber
-            && existingInfo.EpisodeNumber == programme.EpisodeNumber
-            && existingInfo.SeasonNumber.HasValue
-            && existingInfo.EpisodeNumber.HasValue;
+        int season = seasonNumber.Value;
+        int episode = episodeNumber.Value;
+
+        if (!_highWaterMarks.TryGetValue(seriesTimerId, out var mark))
+        {
+            _highWaterMarks[seriesTimerId] = new EpisodeHighWaterMark { Season = season, Episode = episode };
+        }
+        else if (season > mark.Season || (season == mark.Season && episode > mark.Episode))
+        {
+            mark.Season = season;
+            mark.Episode = episode;
+        }
+        else
+        {
+            return;
+        }
+
+        timerStore.SaveHighWaterMarks(_highWaterMarks);
     }
 }

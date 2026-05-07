@@ -53,6 +53,8 @@ public class TimerStore
 
     private string SeriesTimersPath => Path.Combine(_dataPath, "series_timers.json");
 
+    private string RecordedEpisodesPath => Path.Combine(_dataPath, "recorded_episodes.json");
+
     /// <summary>
     /// Loads timers from disk.
     /// </summary>
@@ -138,6 +140,50 @@ public class TimerStore
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving series timers to {Path}", SeriesTimersPath);
+        }
+    }
+
+    /// <summary>
+    /// Loads the episode high-water marks from disk.
+    /// Each series timer tracks the highest season+episode that has been scheduled.
+    /// </summary>
+    /// <returns>Dictionary of series timer ID to its high-water mark.</returns>
+    public Dictionary<string, EpisodeHighWaterMark> LoadHighWaterMarks()
+    {
+        try
+        {
+            if (File.Exists(RecordedEpisodesPath))
+            {
+                string json = File.ReadAllText(RecordedEpisodesPath);
+                var marks = JsonSerializer.Deserialize<Dictionary<string, EpisodeHighWaterMark>>(json, JsonOptions);
+                if (marks != null)
+                {
+                    return marks;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading high-water marks from {Path}", RecordedEpisodesPath);
+        }
+
+        return new Dictionary<string, EpisodeHighWaterMark>();
+    }
+
+    /// <summary>
+    /// Saves the episode high-water marks to disk.
+    /// </summary>
+    /// <param name="marks">The high-water marks to save.</param>
+    public void SaveHighWaterMarks(Dictionary<string, EpisodeHighWaterMark> marks)
+    {
+        try
+        {
+            string json = JsonSerializer.Serialize(marks, JsonOptions);
+            File.WriteAllText(RecordedEpisodesPath, json);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving high-water marks to {Path}", RecordedEpisodesPath);
         }
     }
 }
