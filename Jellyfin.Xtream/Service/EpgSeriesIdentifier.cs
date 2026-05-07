@@ -187,24 +187,24 @@ public static partial class EpgSeriesIdentifier
     [GeneratedRegex(@"S(?<season>\d{1,2})E(?<episode>\d{1,3})", RegexOptions.IgnoreCase)]
     private static partial Regex CompactSeasonEpisodeRegex();
 
-    // Sæson 1 Episode 10, Season 2 Episode 5, Säsong 1 Avsnitt 3, Saison 2 Épisode 4
-    [GeneratedRegex(@"(?:S[æä]son[g]?|Season|Saison|Stagione)\s*(?<season>\d{1,2})\s*[,.]?\s*(?:Episode|Ep\.?|Afsnit|Avsnitt|[ÉE]pisode|Del|Episodio)\s*(?<episode>\d{1,3})", RegexOptions.IgnoreCase)]
+    // Sæson: 2026. Episode: 7, Season 2 Episode 5, Säsong 1 Avsnitt 3, Saison 2 Épisode 4
+    [GeneratedRegex(@"(?:S[æä]son[g]?|Season|Saison|Stagione)[:\s]*(?<season>\d{1,4})\s*[,.\s]*(?:Episode|Ep\.?|Afsnit|Avsnitt|[ÉE]pisode|Del|Episodio)[:\s]*(?<episode>\d{1,4})", RegexOptions.IgnoreCase)]
     private static partial Regex VerboseSeasonEpisodeRegex();
 
-    // Season 1, Sæson 2 (without episode)
-    [GeneratedRegex(@"(?:S[æä]son[g]?|Season|Saison|Stagione)\s*(?<season>\d{1,2})", RegexOptions.IgnoreCase)]
+    // Season 1, Sæson 2, Sæson: 2026 (without episode)
+    [GeneratedRegex(@"(?:S[æä]son[g]?|Season|Saison|Stagione)[:\s]*(?<season>\d{1,4})", RegexOptions.IgnoreCase)]
     private static partial Regex SeasonOnlyRegex();
 
-    // Episode 10, Ep. 5, Afsnit 3, Avsnitt 7, Del 2
-    [GeneratedRegex(@"(?:Episode|Ep\.?|Afsnit|Avsnitt|Del|Episodio)\s*(?<episode>\d{1,3})", RegexOptions.IgnoreCase)]
+    // Episode 10, Ep. 5, Afsnit 3, Avsnitt 7, Del 2, Episode: 7
+    [GeneratedRegex(@"(?:Episode|Ep\.?|Afsnit|Avsnitt|Del|Episodio)[:\s]*(?<episode>\d{1,4})", RegexOptions.IgnoreCase)]
     private static partial Regex EpisodeOnlyRegex();
 
     // (10) or (10/24)
     [GeneratedRegex(@"\((?<episode>\d{1,3})(?:/\d{1,3})?\)")]
     private static partial Regex ParenthesizedEpisodeRegex();
 
-    // "Episode Title" at start of description
-    [GeneratedRegex(@"^[""«»„""](?<title>[^""«»„""]+)[""«»„""]")]
+    // "Episode Title" or 'Episode Title' at start or after season/episode info
+    [GeneratedRegex(@"[""«»„""''](?<title>[^""«»„""'']+)[""«»„""'']")]
     private static partial Regex QuotedEpisodeTitleRegex();
 
     [GeneratedRegex(@"\s+")]

@@ -177,4 +177,32 @@ public class EpgSeriesIdentifierTests
         Assert.Equal(3, result.SeasonNumber);
         Assert.Equal(9, result.EpisodeNumber);
     }
+
+    [Fact]
+    public void Parse_DanishColonFormat_ExtractsCorrectly()
+    {
+        var result = EpgSeriesIdentifier.Parse(
+            "Kontant: Hvem stopper iden",
+            "Sæson: 2026. Episode: 7. 'Hvem stopper identitetstyvene?'. Jacob Kragelund har et hemmeligt investeringstip.");
+
+        Assert.True(result.IsSeries);
+        Assert.Equal(2026, result.SeasonNumber);
+        Assert.Equal(7, result.EpisodeNumber);
+        Assert.Equal("Hvem stopper identitetstyvene?", result.EpisodeTitle);
+    }
+
+    [Fact]
+    public void Parse_DanishColonFormat_SeriesIdFromTitle()
+    {
+        var result1 = EpgSeriesIdentifier.Parse(
+            "Kontant: Hvem stopper iden",
+            "Sæson: 2026. Episode: 7. 'Hvem stopper identitetstyvene?'.");
+
+        var result2 = EpgSeriesIdentifier.Parse(
+            "Kontant: Hvem stopper iden",
+            "Sæson: 2026. Episode: 8. 'Ny episode'.");
+
+        // Same title produces same SeriesId
+        Assert.Equal(result1.SeriesId, result2.SeriesId);
+    }
 }
