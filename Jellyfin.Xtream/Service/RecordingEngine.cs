@@ -56,6 +56,7 @@ public class RecordingEngine : IHostedService, IDisposable
     // TS file paths kept servable through cleanup so clients can drain remaining data
     private readonly ConcurrentDictionary<string, string> _servableTsPaths = new();
     private Timer? _pollTimer;
+    private Timer? _seriesTimerPollTimer;
     private bool _disposed;
 
     /// <summary>
@@ -108,6 +109,7 @@ public class RecordingEngine : IHostedService, IDisposable
         _logger.LogInformation("Recording engine started. Recordings path: {Path}", RecordingsPath);
         CleanupOrphanedRecordingArtifacts();
         _pollTimer = new Timer(CheckTimers, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(15));
+        _seriesTimerPollTimer = new Timer(CheckSeriesTimers, null, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5));
         return Task.CompletedTask;
     }
 
@@ -115,6 +117,7 @@ public class RecordingEngine : IHostedService, IDisposable
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _pollTimer?.Change(Timeout.Infinite, 0);
+        _seriesTimerPollTimer?.Change(Timeout.Infinite, 0);
 
         foreach (var recording in _activeRecordings.Values)
         {
@@ -198,6 +201,7 @@ public class RecordingEngine : IHostedService, IDisposable
         if (disposing)
         {
             _pollTimer?.Dispose();
+            _seriesTimerPollTimer?.Dispose();
             foreach (var recording in _activeRecordings.Values)
             {
                 recording.Dispose();
@@ -262,6 +266,19 @@ public class RecordingEngine : IHostedService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error checking timers");
+        }
+    }
+
+    private async void CheckSeriesTimers(object? state)
+    {
+        try
+        {
+            _logger.LogDebug("CheckSeriesTimers: updating series timer schedules");
+            await _liveTvService.UpdateSeriesTimersAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating series timers");
         }
     }
 

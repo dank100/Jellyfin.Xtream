@@ -188,9 +188,15 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             info.Id = Guid.NewGuid().ToString("N");
         }
 
+        // Ensure SeriesId is populated for matching against EPG programmes
+        if (string.IsNullOrEmpty(info.SeriesId) && !string.IsNullOrEmpty(info.Name))
+        {
+            info.SeriesId = EpgSeriesIdentifier.GenerateSeriesId(info.Name);
+        }
+
         _seriesTimers[info.Id] = info;
         timerStore.SaveSeriesTimers(_seriesTimers.Values);
-        logger.LogInformation("Series timer created: {TimerId}", info.Id);
+        logger.LogInformation("Series timer created: {TimerId} with SeriesId={SeriesId}", info.Id, info.SeriesId);
         return Task.CompletedTask;
     }
 
@@ -485,5 +491,181 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         return myTz.GetUtcOffset(now) - epgTz.GetUtcOffset(now);
+    }
+
+    /// <summary>
+    /// Gets a snapshot of current series timers.
+    /// </summary>
+    /// <returns>A read-only list of series timer infos.</returns>
+    public IReadOnlyList<SeriesTimerInfo> GetSeriesTimersSnapshot()
+    {
+        return _seriesTimers.Values.ToList();
+    }
+
+    /// <summary>
+    /// Processes series timers by matching them against upcoming EPG programmes and
+    /// creating individual recording timers for matching episodes.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    public async Task UpdateSeriesTimersAsync(CancellationToken cancellationToken)
+    {
+        var seriesTimers = GetSeriesTimersSnapshot();
+        if (seriesTimers.Count == 0)
+        {
+            return;
+        }
+
+        var channels = await GetChannelsAsync(cancellationToken).ConfigureAwait(false);
+        var now = DateTime.UtcNow;
+        var endWindow = now.AddDays(14);
+
+        foreach (var seriesTimer in seriesTimers)
+        {
+            try
+            {
+                await ScheduleTimersForSeriesAsync(seriesTimer, channels, now, endWindow, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error processing series timer {SeriesTimerId} '{Name}'", seriesTimer.Id, seriesTimer.Name);
+            }
+        }
+    }
+
+    private async Task ScheduleTimersForSeriesAsync(
+        SeriesTimerInfo seriesTimer,
+        IEnumerable<ChannelInfo> channels,
+        DateTime startDateUtc,
+        DateTime endDateUtc,
+        CancellationToken cancellationToken)
+    {
+        // Determine which channels to search
+        IEnumerable<ChannelInfo> targetChannels = seriesTimer.RecordAnyChannel
+            ? channels
+            : channels.Where(c => c.Id == seriesTimer.ChannelId);
+
+        foreach (var channel in targetChannels)
+        {
+            IEnumerable<ProgramInfo> programmes;
+            try
+            {
+                programmes = await GetProgramsAsync(channel.Id, startDateUtc, endDateUtc, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Could not fetch programmes for channel {ChannelId}", channel.Id);
+                continue;
+            }
+
+            foreach (var programme in programmes)
+            {
+                if (!IsSeriesMatch(seriesTimer, programme))
+                {
+                    continue;
+                }
+
+                // Skip programmes that have already ended
+                if (programme.EndDate < DateTime.UtcNow)
+                {
+                    continue;
+                }
+
+                // Check RecordNewOnly: skip if we already have a timer for same season+episode
+                if (seriesTimer.RecordNewOnly && IsDuplicateEpisode(seriesTimer, programme))
+                {
+                    continue;
+                }
+
+                // Check if a timer already exists for this programme
+                string timerId = $"series_{seriesTimer.Id}_{programme.Id}";
+                lock (_timers)
+                {
+                    if (_timers.ContainsKey(timerId))
+                    {
+                        continue;
+                    }
+                }
+
+                // Create individual timer
+                var timer = new TimerInfo
+                {
+                    Id = timerId,
+                    ChannelId = channel.Id,
+                    ProgramId = programme.Id,
+                    Name = programme.Name,
+                    Overview = programme.Overview,
+                    StartDate = programme.StartDate,
+                    EndDate = programme.EndDate,
+                    SeriesTimerId = seriesTimer.Id,
+                    PrePaddingSeconds = seriesTimer.PrePaddingSeconds,
+                    PostPaddingSeconds = seriesTimer.PostPaddingSeconds,
+                    IsPrePaddingRequired = seriesTimer.IsPrePaddingRequired,
+                    IsPostPaddingRequired = seriesTimer.IsPostPaddingRequired,
+                };
+
+                lock (_timers)
+                {
+                    _timers[timer.Id] = timer;
+                    PersistTimers();
+                }
+
+                logger.LogInformation(
+                    "Series timer '{SeriesName}' scheduled recording: {ProgramName} on {Channel} at {Start}",
+                    seriesTimer.Name,
+                    programme.Name,
+                    channel.Name,
+                    programme.StartDate);
+            }
+        }
+    }
+
+    private static bool IsSeriesMatch(SeriesTimerInfo seriesTimer, ProgramInfo programme)
+    {
+        // Match by SeriesId if available
+        if (!string.IsNullOrEmpty(seriesTimer.SeriesId) && !string.IsNullOrEmpty(programme.SeriesId))
+        {
+            return string.Equals(seriesTimer.SeriesId, programme.SeriesId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Fallback: match by programme name (case-insensitive, trimmed)
+        if (!string.IsNullOrEmpty(seriesTimer.Name) && !string.IsNullOrEmpty(programme.Name))
+        {
+            return string.Equals(seriesTimer.Name.Trim(), programme.Name.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private bool IsDuplicateEpisode(SeriesTimerInfo seriesTimer, ProgramInfo programme)
+    {
+        if (!programme.SeasonNumber.HasValue && !programme.EpisodeNumber.HasValue)
+        {
+            // Without season/episode data, we can't determine duplicates
+            return false;
+        }
+
+        lock (_timers)
+        {
+            return _timers.Values.Any(t =>
+                t.SeriesTimerId == seriesTimer.Id &&
+                t.Id != $"series_{seriesTimer.Id}_{programme.Id}" &&
+                IsSameEpisode(t, programme));
+        }
+    }
+
+    private static bool IsSameEpisode(TimerInfo existingTimer, ProgramInfo programme)
+    {
+        // Parse series info from the existing timer's name + overview to compare
+        var existingInfo = EpgSeriesIdentifier.Parse(existingTimer.Name ?? string.Empty, existingTimer.Overview);
+        if (!existingInfo.IsSeries)
+        {
+            return false;
+        }
+
+        return existingInfo.SeasonNumber == programme.SeasonNumber
+            && existingInfo.EpisodeNumber == programme.EpisodeNumber
+            && existingInfo.SeasonNumber.HasValue
+            && existingInfo.EpisodeNumber.HasValue;
     }
 }
