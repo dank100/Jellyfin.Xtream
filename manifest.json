@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Fix recording playback black screen**: Serve HLS playlist inline instead of 302 redirect — fixes players that don't follow redirects for m3u8\n- Use absolute segment URLs so players resolve them correctly regardless of request origin\n- Re-enable SupportsTranscoding in RecordingRestream so Jellyfin routes through DynamicHls (where our filter intercepts)\n- Fix live TV interference when recording simultaneously",
+        "checksum": "26dd2d5971818f50a2e34de6ef0fbbdf",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.91.0/jellyfin-xtream_0.9.91.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-09T16:57:41Z",
+        "version": "0.9.91.0"
+      },
+      {
         "changelog": "## Changes\n\n- **Fix recording playback black screen**: All clients now get redirected to the direct HLS endpoint, bypassing ffmpeg which was crashing with exit code 234 on seek\n- RecordingHlsActionFilter now checks both LiveStreamId and mediaSourceId query params for the recording marker\n- RecordingRestream disables transcoding/direct stream to prevent ffmpeg from processing HLS input",
         "checksum": "21e1eea682711ba3837f3f8bc120997b",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.90.0/jellyfin-xtream_0.9.90.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-01T19:27:37Z",
         "version": "0.9.62.0"
-      },
-      {
-        "changelog": "Two changes to eliminate iOS transcoding:\n1. SupportsTranscoding=false — forces DirectStream/DirectPlay\n2. Container=\"mp4\" — matches iOS DirectPlayProfile (was \"ts\" which iOS profiles likely exclude)\n\nCombined with earlier fixes (IsInterlaced=false, SupportsDirectStream=true), this should finally force stream copy on all clients.",
-        "checksum": "e09877ede53086fe1e159c973f028ce4",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.61.0/jellyfin-xtream_0.9.61.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-01T17:05:28Z",
-        "version": "0.9.61.0"
       }
     ]
   }
