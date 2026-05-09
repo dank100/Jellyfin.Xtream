@@ -52,53 +52,63 @@ public class RecordingHlsActionFilter : IActionFilter
             return;
         }
 
-        // Try both casings — ASP.NET Core QueryCollection is case-insensitive but log for debugging
+        // Try to extract the timer ID from LiveStreamId or mediaSourceId
+        string? timerId = ExtractTimerIdFromQuery(context);
+
+        if (timerId == null)
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Intercepting DynamicHls request for recording {TimerId}, redirecting to direct HLS",
+            timerId);
+
+        // Redirect all clients (including Android TV) to our direct HLS endpoint.
+        // This bypasses ffmpeg entirely — the recording segments are already in a
+        // playable format (H264+AAC in MPEG-TS). Letting ffmpeg process the HLS input
+        // causes exit code 234 crashes on seek, producing black screens.
+        string redirectUrl = $"/Xtream/Recordings/{timerId}/stream.m3u8";
+        context.Result = new RedirectResult(redirectUrl, permanent: false);
+    }
+
+    /// <summary>
+    /// Tries to extract the recording timer ID from query parameters.
+    /// Checks LiveStreamId first, then falls back to mediaSourceId.
+    /// </summary>
+    private string? ExtractTimerIdFromQuery(ActionExecutingContext context)
+    {
+        // Try LiveStreamId (used when opened via live TV path)
         string liveStreamId = context.HttpContext.Request.Query["LiveStreamId"].ToString();
         if (string.IsNullOrEmpty(liveStreamId))
         {
             liveStreamId = context.HttpContext.Request.Query["liveStreamId"].ToString();
         }
 
-        // Also check action parameters (DynamicHls binds from query)
         if (string.IsNullOrEmpty(liveStreamId) && context.ActionArguments.TryGetValue("liveStreamId", out var argValue))
         {
             liveStreamId = argValue?.ToString() ?? string.Empty;
         }
 
-        _logger.LogInformation(
-            "RecordingHlsActionFilter matched HLS path: {Path}, LiveStreamId: {LiveStreamId}",
-            path,
-            liveStreamId ?? "(null)");
-
-        if (string.IsNullOrEmpty(liveStreamId) || !liveStreamId.Contains(RecordingMarker, StringComparison.Ordinal))
+        if (!string.IsNullOrEmpty(liveStreamId) && liveStreamId.Contains(RecordingMarker, StringComparison.Ordinal))
         {
-            return;
+            int markerIdx = liveStreamId.IndexOf(RecordingMarker, StringComparison.Ordinal);
+            return liveStreamId.Substring(markerIdx + RecordingMarker.Length);
         }
 
-        // Don't redirect Android TV clients — ExoPlayer can't seek backward in live EVENT
-        // playlists. Let Jellyfin handle it normally (remux) which provides a seekbar.
-        string userAgent = context.HttpContext.Request.Headers["User-Agent"].ToString();
-        if (userAgent.Contains("AndroidTV", StringComparison.OrdinalIgnoreCase)
-            || userAgent.Contains("Android TV", StringComparison.OrdinalIgnoreCase)
-            || userAgent.Contains("org.jellyfin.androidtv", StringComparison.OrdinalIgnoreCase)
-            || userAgent.Contains("ExoPlayer", StringComparison.OrdinalIgnoreCase))
+        // Fallback: check mediaSourceId (used when opened as a regular video/.strm item)
+        string mediaSourceId = context.HttpContext.Request.Query["mediaSourceId"].ToString();
+        if (string.IsNullOrEmpty(mediaSourceId) && context.ActionArguments.TryGetValue("mediaSourceId", out var msValue))
         {
-            _logger.LogInformation("Skipping redirect for Android TV client: {UserAgent}", userAgent);
-            return;
+            mediaSourceId = msValue?.ToString() ?? string.Empty;
         }
 
-        // Extract timerId from LiveStreamId: "{hash}_{hash}_xtream_rec_{timerId}"
-        int markerIdx = liveStreamId.IndexOf(RecordingMarker, StringComparison.Ordinal);
-        string timerId = liveStreamId.Substring(markerIdx + RecordingMarker.Length);
+        if (!string.IsNullOrEmpty(mediaSourceId) && mediaSourceId.StartsWith(RecordingMarker, StringComparison.Ordinal))
+        {
+            return mediaSourceId.Substring(RecordingMarker.Length);
+        }
 
-        _logger.LogInformation(
-            "Intercepting DynamicHls request for recording {TimerId}, redirecting to direct HLS",
-            timerId);
-
-        // Short-circuit the action — redirect client to our direct HLS endpoint
-        // No ?vod=true: keep EVENT playlist so players refresh for new segments.
-        string redirectUrl = $"/Xtream/Recordings/{timerId}/stream.m3u8";
-        context.Result = new RedirectResult(redirectUrl, permanent: false);
+        return null;
     }
 
     /// <inheritdoc />
