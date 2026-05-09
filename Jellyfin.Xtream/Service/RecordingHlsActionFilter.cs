@@ -14,6 +14,9 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Logging;
@@ -22,21 +25,25 @@ namespace Jellyfin.Xtream.Service;
 
 /// <summary>
 /// Global MVC action filter that intercepts DynamicHls transcode requests for recording
-/// channels and redirects them to our direct HLS endpoint. This bypasses ffmpeg entirely.
+/// channels and serves our HLS playlist inline. This bypasses ffmpeg entirely — the
+/// recording segments are already in a playable format (H264+AAC in MPEG-TS).
 /// Registered as a global filter via MvcOptions — works from plugins unlike IStartupFilter.
 /// </summary>
 public class RecordingHlsActionFilter : IActionFilter
 {
     private const string RecordingMarker = "xtream_rec_";
     private readonly ILogger<RecordingHlsActionFilter> _logger;
+    private readonly RecordingEngine _recordingEngine;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RecordingHlsActionFilter"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
-    public RecordingHlsActionFilter(ILogger<RecordingHlsActionFilter> logger)
+    /// <param name="recordingEngine">The recording engine singleton.</param>
+    public RecordingHlsActionFilter(ILogger<RecordingHlsActionFilter> logger, RecordingEngine recordingEngine)
     {
         _logger = logger;
+        _recordingEngine = recordingEngine;
     }
 
     /// <inheritdoc />
@@ -61,15 +68,88 @@ public class RecordingHlsActionFilter : IActionFilter
         }
 
         _logger.LogInformation(
-            "Intercepting DynamicHls request for recording {TimerId}, redirecting to direct HLS",
+            "Intercepting DynamicHls request for recording {TimerId}, serving HLS inline",
             timerId);
 
-        // Redirect all clients (including Android TV) to our direct HLS endpoint.
-        // This bypasses ffmpeg entirely — the recording segments are already in a
-        // playable format (H264+AAC in MPEG-TS). Letting ffmpeg process the HLS input
-        // causes exit code 234 crashes on seek, producing black screens.
-        string redirectUrl = $"/Xtream/Recordings/{timerId}/stream.m3u8";
-        context.Result = new RedirectResult(redirectUrl, permanent: false);
+        // Serve the recording HLS playlist inline instead of redirecting.
+        // Redirects (302) break some HLS players (ExoPlayer, AVPlayer) because they
+        // don't follow redirects for m3u8 playlists correctly. Serving the content
+        // inline with absolute segment URLs avoids this entirely.
+        // timerId is not used to build paths directly — GetHlsDirectory performs a dictionary
+        // lookup that only returns paths the plugin itself created for active recordings.
+#pragma warning disable CA3003
+        string? hlsDir = _recordingEngine.GetHlsDirectory(timerId);
+        if (hlsDir == null || !Directory.Exists(hlsDir))
+        {
+            _logger.LogWarning("Recording HLS directory not found for timer {TimerId}", timerId);
+            context.Result = new NotFoundResult();
+            return;
+        }
+
+        string playlistPath = Path.Combine(hlsDir, "live.m3u8");
+        if (!File.Exists(playlistPath))
+        {
+            _logger.LogWarning("Recording playlist not yet available for timer {TimerId}", timerId);
+            context.Result = new NotFoundResult();
+            return;
+        }
+
+        string[] lines = File.ReadAllLines(playlistPath);
+        bool isActive = _recordingEngine.IsRecordingActive(timerId);
+#pragma warning restore CA3003
+
+        // Build the base URL for absolute segment references
+        var request = context.HttpContext.Request;
+        string baseUrl = $"{request.Scheme}://{request.Host}/Xtream/Recordings/{timerId}";
+
+        var result = new List<string>();
+        foreach (string line in lines)
+        {
+            // Rewrite segment filenames to absolute URLs through our API
+            if (!line.StartsWith('#') && line.StartsWith("seg_", StringComparison.Ordinal))
+            {
+                result.Add($"{baseUrl}/segments/{line}");
+            }
+            else
+            {
+                result.Add(line);
+            }
+        }
+
+        // Add START tag for player positioning
+        if (isActive)
+        {
+            int insertIdx = result.FindIndex(l => l.StartsWith("#EXT-X-TARGETDURATION", StringComparison.Ordinal));
+            if (insertIdx >= 0)
+            {
+                result.Insert(insertIdx + 1, "#EXT-X-START:TIME-OFFSET=0,PRECISE=YES");
+            }
+        }
+
+        // Add ENDLIST for completed recordings
+        if (!isActive && result.Count > 0 && !result.Any(l => l.Contains("#EXT-X-ENDLIST", StringComparison.Ordinal)))
+        {
+            int insertIdx = result.FindIndex(l => l.StartsWith("#EXTINF:", StringComparison.Ordinal));
+            if (insertIdx > 0)
+            {
+                result.Insert(insertIdx, "#EXT-X-START:TIME-OFFSET=-12,PRECISE=YES");
+            }
+
+            result.Add("#EXT-X-ENDLIST");
+        }
+
+        string content = string.Join('\n', result);
+
+        context.HttpContext.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        context.HttpContext.Response.Headers["Pragma"] = "no-cache";
+        context.HttpContext.Response.Headers["Access-Control-Allow-Origin"] = "*";
+
+        context.Result = new ContentResult
+        {
+            Content = content,
+            ContentType = "application/vnd.apple.mpegurl",
+            StatusCode = 200,
+        };
     }
 
     /// <summary>

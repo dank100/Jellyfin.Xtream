@@ -99,7 +99,7 @@ public class RecordingRestream : ILiveStream, IDisposable
             AnalyzeDurationMs = 500,
             SupportsDirectPlay = true,
             SupportsDirectStream = false,
-            SupportsTranscoding = false,
+            SupportsTranscoding = true,
             IsInfiniteStream = false,
             SupportsProbing = false,
             IsRemote = false,
