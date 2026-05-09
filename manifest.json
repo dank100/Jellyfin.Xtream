@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Fix recording playback black screen**: All clients now get redirected to the direct HLS endpoint, bypassing ffmpeg which was crashing with exit code 234 on seek\n- RecordingHlsActionFilter now checks both LiveStreamId and mediaSourceId query params for the recording marker\n- RecordingRestream disables transcoding/direct stream to prevent ffmpeg from processing HLS input",
+        "checksum": "21e1eea682711ba3837f3f8bc120997b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.90.0/jellyfin-xtream_0.9.90.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-09T15:39:41Z",
+        "version": "0.9.90.0"
+      },
+      {
         "changelog": "## EPG Series Identification & Recording\n\n- **EPG Series Parser**: Extracts season/episode metadata from programme titles and descriptions using multi-language regex patterns (Danish, Swedish, English, compact S01E10 format)\n- **Reproducible Series IDs**: Generates deterministic SHA256-based SeriesId from normalized show titles, enabling Jellyfin's 'Record Series' functionality\n- **Series Timer Auto-Scheduling**: Polls EPG every 5 minutes to create individual recording timers for series timer subscriptions\n- **RecordNewOnly with High-Water Mark**: Only schedules episodes newer than the highest previously scheduled season+episode\n- **Danish EPG format support**: Handles 'Sæson: N. Episode: N.' with colons and periods",
         "checksum": "bdb3c010d1faeae5b329f93db66fdc80",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.89.0/Jellyfin.Xtream-v0.9.89.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-01T17:05:28Z",
         "version": "0.9.61.0"
-      },
-      {
-        "changelog": "Force stream copy on all clients by disabling transcoding.\n\nSwiftfin device profile has conditions that reject H264 for stream copy, forcing H264→AV1 transcode at 0.8x speed (unusable). With SupportsTranscoding=false, the StreamBuilder must choose DirectStream (codec copy) or DirectPlay. H264 via HLS is natively supported on all iOS devices.",
-        "checksum": "ec3feda665d54359023229fd1937cf5e",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.60.0/jellyfin-xtream_0.9.60.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-01T17:03:06Z",
-        "version": "0.9.60.0"
       }
     ]
   }
