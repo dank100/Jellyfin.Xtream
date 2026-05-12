@@ -154,14 +154,28 @@ public class EpgSeriesIdentifierTests
     }
 
     [Fact]
-    public void Parse_SeasonOnlyInDescription_ExtractsSeason()
+    public void Parse_SeasonOnlyInDescription_NotASeries()
     {
+        // Season-only (no episode) should NOT mark as series — too ambiguous
+        // (sports events use "Sæson: 26" for competition year)
         var result = EpgSeriesIdentifier.Parse(
             "Borgen",
             "Sæson 3. Birgitte tager en stor beslutning.");
 
-        Assert.True(result.IsSeries);
+        Assert.False(result.IsSeries);
         Assert.Equal(3, result.SeasonNumber);
+        Assert.Null(result.EpisodeNumber);
+    }
+
+    [Fact]
+    public void Parse_SportsSeasonNotASeries()
+    {
+        var result = EpgSeriesIdentifier.Parse(
+            "Liga Portugal: Benfica-Braga",
+            "Sæson: 26. . Benfica og danske Alexander Bah får besøg af Braga i 33. spillerunde.");
+
+        Assert.False(result.IsSeries);
+        Assert.Equal(26, result.SeasonNumber);
         Assert.Null(result.EpisodeNumber);
     }
 

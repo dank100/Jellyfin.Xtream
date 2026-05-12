@@ -64,7 +64,11 @@ public static partial class EpgSeriesIdentifier
             episodeTitle = TryExtractEpisodeTitle(description);
         }
 
-        bool isSeries = seasonNumber.HasValue || episodeNumber.HasValue;
+        // Require an episode number to mark as series. Season-only matches are too
+        // ambiguous — sports use "Sæson: 26" to mean the 2026 competition year, not
+        // a TV series season. Season number is still populated for metadata when
+        // an episode number IS present.
+        bool isSeries = episodeNumber.HasValue;
         string seriesId = GenerateSeriesId(isSeries ? seriesTitle : title);
 
         return new EpgSeriesInfo
