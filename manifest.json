@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Sport series detection**: Season-only EPG matches (e.g. `Sæson: 26`) are now marked as sport series (`IsSeries=true`, `IsSport=true`). The 'Record Series' button appears in the guide for sport events.\n- **Live-only recording for sport**: The series timer scheduler only creates recording timers for sport programmes whose title contains 'live' — filtering out highlights, replays, and studio shows.\n- Regular TV series (with episode numbers) are unaffected.",
+        "checksum": "b08c59016d1cd6b4771114fb5e9b526c",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.94.0/jellyfin-xtream_0.9.94.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T11:20:23Z",
+        "version": "0.9.94.0"
+      },
+      {
         "changelog": "## Changes\n\n- **Season-only no longer marks as series**: `Sæson: 26` without an episode number is no longer detected as a TV series. Sports events like Liga Portugal use season numbers for the competition year, not TV seasons. An episode number is now required for `IsSeries=true`.\n- Includes all fixes from v0.9.92.0 (word boundary regex, empty playlist fail-fast)",
         "checksum": "74dc8fbeb58204547ae42e4ef3602081",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.93.0/jellyfin-xtream_0.9.93.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-01T19:54:23Z",
         "version": "0.9.65.0"
-      },
-      {
-        "changelog": "Fix web player: enable SupportsTranscoding for HLS remux path.\n\nWith SupportsTranscoding=true, the web player can use HLS with video copy + audio transcode, avoiding the AAC ADTS-to-fMP4 issue.",
-        "checksum": "1e55ad95f82c6da98967c07a31c905d4",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.64.0/jellyfin-xtream_0.9.64.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-01T19:48:32Z",
-        "version": "0.9.64.0"
       }
     ]
   }
