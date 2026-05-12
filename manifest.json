@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Stricter parenthesized episode pattern**: Bare `(15)` no longer matches as an episode number — only the `(8/12)` format (with total count) is recognized. This fixes false series detection for sport programmes like IndyCar Highlights where `(15)` refers to a race round or broadcast time.\n- Includes v0.9.94.0 sport series detection (season-only = sport, only record live titles)",
+        "checksum": "bd126d0a63e1756285c023645144267b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.95.0/jellyfin-xtream_0.9.95.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T11:26:01Z",
+        "version": "0.9.95.0"
+      },
+      {
         "changelog": "## Changes\n\n- **Sport series detection**: Season-only EPG matches (e.g. `Sæson: 26`) are now marked as sport series (`IsSeries=true`, `IsSport=true`). The 'Record Series' button appears in the guide for sport events.\n- **Live-only recording for sport**: The series timer scheduler only creates recording timers for sport programmes whose title contains 'live' — filtering out highlights, replays, and studio shows.\n- Regular TV series (with episode numbers) are unaffected.",
         "checksum": "b08c59016d1cd6b4771114fb5e9b526c",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.94.0/jellyfin-xtream_0.9.94.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-01T20:20:29Z",
         "version": "0.9.66.0"
-      },
-      {
-        "changelog": "Fix iOS and web: disable DirectStream to prevent AAC ADTS copy to MP4 without BSF.\n\nClients now either DirectPlay HLS natively or use HLS transcode path.",
-        "checksum": "c55c06d3193116a00d1842e29f3f900c",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.65.0/jellyfin-xtream_0.9.65.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-01T19:54:23Z",
-        "version": "0.9.65.0"
       }
     ]
   }
