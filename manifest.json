@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Fix false series detection**: Added word boundaries to EPG regex patterns — words like 'model', 'prep' no longer falsely match 'Del', 'Ep' patterns\n- **Fix empty multiplexer playlist**: MultiplexedRestream.Open() now throws an error if no segments are produced within 60s, instead of silently serving an empty playlist that crashes ffmpeg\n- 3 new tests for word boundary edge cases (53 total)",
+        "checksum": "276e91e980106ae17ba2fd320fb7d25f",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.92.0/jellyfin-xtream_0.9.92.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T11:08:07Z",
+        "version": "0.9.92.0"
+      },
+      {
         "changelog": "## Changes\n\n- **Fix recording playback black screen**: Serve HLS playlist inline instead of 302 redirect — fixes players that don't follow redirects for m3u8\n- Use absolute segment URLs so players resolve them correctly regardless of request origin\n- Re-enable SupportsTranscoding in RecordingRestream so Jellyfin routes through DynamicHls (where our filter intercepts)\n- Fix live TV interference when recording simultaneously",
         "checksum": "26dd2d5971818f50a2e34de6ef0fbbdf",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.91.0/jellyfin-xtream_0.9.91.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-01T19:37:45Z",
         "version": "0.9.63.0"
-      },
-      {
-        "changelog": "Fix: Increase AnalyzeDurationMs from 500 to 10000 to prevent ffmpeg exit code 234 when remuxing HLS streams. Fixes web player and iOS playback failures.",
-        "checksum": "e5c350b8f1848c22edde31cbc90032ef",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.62.0/jellyfin-xtream_0.9.62.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-01T19:27:37Z",
-        "version": "0.9.62.0"
       }
     ]
   }
