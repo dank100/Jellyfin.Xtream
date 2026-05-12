@@ -45,4 +45,10 @@ public readonly struct EpgSeriesInfo
     /// Gets a value indicating whether series information was detected.
     /// </summary>
     public bool IsSeries { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the programme appears to be a sport event.
+    /// Sport events have a season number (competition year) but no episode number.
+    /// </summary>
+    public bool IsSport { get; init; }
 }

@@ -154,29 +154,43 @@ public class EpgSeriesIdentifierTests
     }
 
     [Fact]
-    public void Parse_SeasonOnlyInDescription_NotASeries()
+    public void Parse_SeasonOnlyInDescription_IsSportSeries()
     {
-        // Season-only (no episode) should NOT mark as series — too ambiguous
-        // (sports events use "Sæson: 26" for competition year)
+        // Season-only (no episode) is treated as a sport series
         var result = EpgSeriesIdentifier.Parse(
             "Borgen",
             "Sæson 3. Birgitte tager en stor beslutning.");
 
-        Assert.False(result.IsSeries);
+        Assert.True(result.IsSeries);
+        Assert.True(result.IsSport);
         Assert.Equal(3, result.SeasonNumber);
         Assert.Null(result.EpisodeNumber);
     }
 
     [Fact]
-    public void Parse_SportsSeasonNotASeries()
+    public void Parse_SportsSeasonIsSportSeries()
     {
         var result = EpgSeriesIdentifier.Parse(
             "Liga Portugal: Benfica-Braga",
             "Sæson: 26. . Benfica og danske Alexander Bah får besøg af Braga i 33. spillerunde.");
 
-        Assert.False(result.IsSeries);
+        Assert.True(result.IsSeries);
+        Assert.True(result.IsSport);
         Assert.Equal(26, result.SeasonNumber);
         Assert.Null(result.EpisodeNumber);
+    }
+
+    [Fact]
+    public void Parse_RegularSeries_NotSport()
+    {
+        var result = EpgSeriesIdentifier.Parse(
+            "Game of Thrones",
+            "Season 3 Episode 9. The wedding.");
+
+        Assert.True(result.IsSeries);
+        Assert.False(result.IsSport);
+        Assert.Equal(3, result.SeasonNumber);
+        Assert.Equal(9, result.EpisodeNumber);
     }
 
     [Fact]

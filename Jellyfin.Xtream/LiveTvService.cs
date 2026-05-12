@@ -578,6 +578,14 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
                     continue;
                 }
 
+                // Sport programmes (season but no episode) are only recorded when
+                // the title contains "live", filtering out highlights and replays.
+                if (programme.SeasonNumber.HasValue && !programme.EpisodeNumber.HasValue
+                    && !programme.Name.Contains("live", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 // Check if a timer already exists for this programme
                 string timerId = $"series_{seriesTimer.Id}_{programme.Id}";
                 lock (_timers)

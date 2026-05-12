@@ -64,11 +64,12 @@ public static partial class EpgSeriesIdentifier
             episodeTitle = TryExtractEpisodeTitle(description);
         }
 
-        // Require an episode number to mark as series. Season-only matches are too
-        // ambiguous — sports use "Sæson: 26" to mean the 2026 competition year, not
-        // a TV series season. Season number is still populated for metadata when
-        // an episode number IS present.
-        bool isSeries = episodeNumber.HasValue;
+        // Season-only (no episode) is treated as sport — competition years like
+        // "Sæson: 26" are common in sports EPG. Sport series are still IsSeries=true
+        // so the "Record Series" button appears, but the scheduling loop only records
+        // sport programmes whose title contains "live".
+        bool isSeries = seasonNumber.HasValue || episodeNumber.HasValue;
+        bool isSport = seasonNumber.HasValue && !episodeNumber.HasValue;
         string seriesId = GenerateSeriesId(isSeries ? seriesTitle : title);
 
         return new EpgSeriesInfo
@@ -78,6 +79,7 @@ public static partial class EpgSeriesIdentifier
             EpisodeNumber = episodeNumber,
             EpisodeTitle = episodeTitle,
             IsSeries = isSeries,
+            IsSport = isSport,
         };
     }
 
