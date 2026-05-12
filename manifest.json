@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Season-only no longer marks as series**: `Sæson: 26` without an episode number is no longer detected as a TV series. Sports events like Liga Portugal use season numbers for the competition year, not TV seasons. An episode number is now required for `IsSeries=true`.\n- Includes all fixes from v0.9.92.0 (word boundary regex, empty playlist fail-fast)",
+        "checksum": "74dc8fbeb58204547ae42e4ef3602081",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.93.0/jellyfin-xtream_0.9.93.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T11:15:33Z",
+        "version": "0.9.93.0"
+      },
+      {
         "changelog": "## Changes\n\n- **Fix false series detection**: Added word boundaries to EPG regex patterns — words like 'model', 'prep' no longer falsely match 'Del', 'Ep' patterns\n- **Fix empty multiplexer playlist**: MultiplexedRestream.Open() now throws an error if no segments are produced within 60s, instead of silently serving an empty playlist that crashes ffmpeg\n- 3 new tests for word boundary edge cases (53 total)",
         "checksum": "276e91e980106ae17ba2fd320fb7d25f",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.92.0/jellyfin-xtream_0.9.92.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-01T19:48:32Z",
         "version": "0.9.64.0"
-      },
-      {
-        "changelog": "Fix: Use Container=ts so Jellyfin adds aac_adtstoasc bitstream filter when remuxing to fMP4 HLS. Fixes web player playback error (malformed AAC bitstream).",
-        "checksum": "669dd19f9152c10a8989152ffdc6666e",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.63.0/jellyfin-xtream_0.9.63.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-01T19:37:45Z",
-        "version": "0.9.63.0"
       }
     ]
   }
