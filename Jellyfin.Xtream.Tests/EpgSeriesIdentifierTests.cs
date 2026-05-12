@@ -80,7 +80,7 @@ public class EpgSeriesIdentifierTests
     }
 
     [Fact]
-    public void Parse_ParenthesizedEpisode_ExtractsEpisode()
+    public void Parse_ParenthesizedEpisodeWithTotal_ExtractsEpisode()
     {
         var result = EpgSeriesIdentifier.Parse(
             "Vild med dans",
@@ -88,6 +88,18 @@ public class EpgSeriesIdentifierTests
 
         Assert.True(result.IsSeries);
         Assert.Equal(8, result.EpisodeNumber);
+    }
+
+    [Fact]
+    public void Parse_BareParenthesizedNumber_NotDetected()
+    {
+        // Bare (15) should NOT match — too ambiguous (sport round, time reference)
+        var result = EpgSeriesIdentifier.Parse(
+            "Indycar Highlights",
+            "NTT IndyCar Series race day at the Grand Prix of Arlington. (15)");
+
+        Assert.False(result.IsSeries);
+        Assert.Null(result.EpisodeNumber);
     }
 
     [Fact]

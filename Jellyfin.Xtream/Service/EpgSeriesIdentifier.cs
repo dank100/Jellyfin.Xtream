@@ -205,8 +205,9 @@ public static partial class EpgSeriesIdentifier
     [GeneratedRegex(@"(?<!\w)(?:Episode|Ep\.?|Afsnit|Avsnitt|Del|Episodio)[:\s]*(?<episode>\d{1,4})", RegexOptions.IgnoreCase)]
     private static partial Regex EpisodeOnlyRegex();
 
-    // (10) or (10/24)
-    [GeneratedRegex(@"\((?<episode>\d{1,3})(?:/\d{1,3})?\)")]
+    // (10/24) — requires total count to avoid false positives from sport round
+    // numbers and time references like (15)
+    [GeneratedRegex(@"\((?<episode>\d{1,3})/\d{1,3}\)")]
     private static partial Regex ParenthesizedEpisodeRegex();
 
     // "Episode Title" or 'Episode Title' at start or after season/episode info
