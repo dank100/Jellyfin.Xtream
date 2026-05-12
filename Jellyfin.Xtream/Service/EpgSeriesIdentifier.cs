@@ -58,6 +58,15 @@ public static partial class EpgSeriesIdentifier
             TryExtractEpisodeOnly(description, out episodeNumber);
         }
 
+        // Try sport season detection: a 4-digit year near "Series" in title or description
+        if (!seasonNumber.HasValue && !episodeNumber.HasValue)
+        {
+            if (!TryExtractSportSeason(title, out seasonNumber))
+            {
+                TryExtractSportSeason(description, out seasonNumber);
+            }
+        }
+
         // Try extracting episode title from description patterns like "Episode title. Description..."
         if (episodeTitle == null && !string.IsNullOrEmpty(description))
         {
@@ -189,6 +198,24 @@ public static partial class EpgSeriesIdentifier
         return null;
     }
 
+    private static bool TryExtractSportSeason(string? text, out int? season)
+    {
+        season = null;
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        Match match = SportYearSeriesRegex().Match(text);
+        if (match.Success)
+        {
+            season = int.Parse(match.Groups["season"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        return false;
+    }
+
     // S01E10, S1E10
     [GeneratedRegex(@"S(?<season>\d{1,2})E(?<episode>\d{1,3})", RegexOptions.IgnoreCase)]
     private static partial Regex CompactSeasonEpisodeRegex();
@@ -213,6 +240,10 @@ public static partial class EpgSeriesIdentifier
     // "Episode Title" or 'Episode Title' at start or after season/episode info
     [GeneratedRegex(@"[""«»„""''](?<title>[^""«»„""'']+)[""«»„""'']")]
     private static partial Regex QuotedEpisodeTitleRegex();
+
+    // Sport season: 4-digit year (2020-2099) appearing near "Series" in the text
+    [GeneratedRegex(@"\b(?<season>20[2-9]\d)\b.*\bSeries\b", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex SportYearSeriesRegex();
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex CollapseWhitespaceRegex();

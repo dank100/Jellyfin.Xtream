@@ -282,4 +282,29 @@ public class EpgSeriesIdentifierTests
         Assert.True(result.IsSeries);
         Assert.Equal(15, result.EpisodeNumber);
     }
+
+    [Fact]
+    public void Parse_SportYearSeries_DetectedAsSport()
+    {
+        var result = EpgSeriesIdentifier.Parse(
+            "Live Indy 500: Practice",
+            "Preparations for the 110th Running of the Indianapolis 500 continue as the 2026 field of NTT IndyCar Series stars hit Indianapolis Motor Speedway.");
+
+        Assert.True(result.IsSeries);
+        Assert.True(result.IsSport);
+        Assert.Equal(2026, result.SeasonNumber);
+        Assert.Null(result.EpisodeNumber);
+    }
+
+    [Fact]
+    public void Parse_SportYearSeries_NoYearNoMatch()
+    {
+        // "Series" alone without a year should not trigger sport detection
+        var result = EpgSeriesIdentifier.Parse(
+            "Documentary Series",
+            "A fascinating look at nature in this new documentary series.");
+
+        Assert.False(result.IsSeries);
+        Assert.Null(result.SeasonNumber);
+    }
 }
