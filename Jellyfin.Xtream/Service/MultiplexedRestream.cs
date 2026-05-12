@@ -171,6 +171,14 @@ public class MultiplexedRestream : ILiveStream, IDisposable
             _streamId,
             segments.Count);
 
+        if (segments.Count == 0)
+        {
+            _multiplexer.Unsubscribe(_streamId, isLive: true);
+            throw new InvalidOperationException(
+                $"Multiplexer produced no segments for channel {_streamId} within 60 seconds. " +
+                "The IPTV source may be down or all provider connections are in use.");
+        }
+
         // Probe the newest segment to get real codec metadata.
         // Newest is least likely to be pruned during the probe.
         if (segments.Count > 0)

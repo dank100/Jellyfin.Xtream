@@ -205,4 +205,41 @@ public class EpgSeriesIdentifierTests
         // Same title produces same SeriesId
         Assert.Equal(result1.SeriesId, result2.SeriesId);
     }
+
+    [Fact]
+    public void Parse_WordBoundary_DelInsideWord_NotDetected()
+    {
+        // "model 15" should NOT match "Del 15" pattern
+        var result = EpgSeriesIdentifier.Parse(
+            "Indycar Highlights",
+            "It's NTT IndyCar Series race day. This model 15 car is fast.");
+
+        Assert.False(result.IsSeries);
+        Assert.Null(result.SeasonNumber);
+        Assert.Null(result.EpisodeNumber);
+    }
+
+    [Fact]
+    public void Parse_WordBoundary_EpInsideWord_NotDetected()
+    {
+        // "Prep 5" should NOT match "Ep 5" pattern
+        var result = EpgSeriesIdentifier.Parse(
+            "Race Preview",
+            "The prep 5 session was cancelled due to rain.");
+
+        Assert.False(result.IsSeries);
+        Assert.Null(result.EpisodeNumber);
+    }
+
+    [Fact]
+    public void Parse_WordBoundary_DelAsStandaloneWord_Detected()
+    {
+        // "Del 15" as a standalone word SHOULD match
+        var result = EpgSeriesIdentifier.Parse(
+            "Nature Documentary",
+            "Del 15. The arctic fox hunts in the snow.");
+
+        Assert.True(result.IsSeries);
+        Assert.Equal(15, result.EpisodeNumber);
+    }
 }

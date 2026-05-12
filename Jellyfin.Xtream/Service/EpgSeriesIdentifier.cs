@@ -188,15 +188,15 @@ public static partial class EpgSeriesIdentifier
     private static partial Regex CompactSeasonEpisodeRegex();
 
     // Sæson: 2026. Episode: 7, Season 2 Episode 5, Säsong 1 Avsnitt 3, Saison 2 Épisode 4
-    [GeneratedRegex(@"(?:S[æä]son[g]?|Season|Saison|Stagione)[:\s]*(?<season>\d{1,4})\s*[,.\s]*(?:Episode|Ep\.?|Afsnit|Avsnitt|[ÉE]pisode|Del|Episodio)[:\s]*(?<episode>\d{1,4})", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?<!\w)(?:S[æä]son[g]?|Season|Saison|Stagione)[:\s]*(?<season>\d{1,4})\s*[,.\s]*(?:Episode|Ep\.?|Afsnit|Avsnitt|[ÉE]pisode|Del|Episodio)[:\s]*(?<episode>\d{1,4})", RegexOptions.IgnoreCase)]
     private static partial Regex VerboseSeasonEpisodeRegex();
 
     // Season 1, Sæson 2, Sæson: 2026 (without episode)
-    [GeneratedRegex(@"(?:S[æä]son[g]?|Season|Saison|Stagione)[:\s]*(?<season>\d{1,4})", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?<!\w)(?:S[æä]son[g]?|Season|Saison|Stagione)[:\s]*(?<season>\d{1,4})", RegexOptions.IgnoreCase)]
     private static partial Regex SeasonOnlyRegex();
 
     // Episode 10, Ep. 5, Afsnit 3, Avsnitt 7, Del 2, Episode: 7
-    [GeneratedRegex(@"(?:Episode|Ep\.?|Afsnit|Avsnitt|Del|Episodio)[:\s]*(?<episode>\d{1,4})", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?<!\w)(?:Episode|Ep\.?|Afsnit|Avsnitt|Del|Episodio)[:\s]*(?<episode>\d{1,4})", RegexOptions.IgnoreCase)]
     private static partial Regex EpisodeOnlyRegex();
 
     // (10) or (10/24)
