@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Year+Series sport detection**: EPG descriptions containing a 4-digit year (2020-2099) near the word 'Series' are now detected as sport seasons. For example, 'the 2026 field of NTT IndyCar Series' extracts season 2026 and marks the programme as sport.\n- Combined with the live-only filter from v0.9.94.0, only sport programmes with 'live' in the title are scheduled for recording.",
+        "checksum": "885caced860d901555e34dccc2dab73f",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.96.0/jellyfin-xtream_0.9.96.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T18:42:59Z",
+        "version": "0.9.96.0"
+      },
+      {
         "changelog": "## Changes\n\n- **Stricter parenthesized episode pattern**: Bare `(15)` no longer matches as an episode number — only the `(8/12)` format (with total count) is recognized. This fixes false series detection for sport programmes like IndyCar Highlights where `(15)` refers to a race round or broadcast time.\n- Includes v0.9.94.0 sport series detection (season-only = sport, only record live titles)",
         "checksum": "bd126d0a63e1756285c023645144267b",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.95.0/jellyfin-xtream_0.9.95.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T05:08:21Z",
         "version": "0.9.67.0"
-      },
-      {
-        "changelog": "Use standard LiveTV stream path for proper AAC BSF support on all clients.\n\n- Replaces custom HLS playlist with LiveTv/LiveStreamFiles endpoint\n- Jellyfin automatically adds -bsf:a aac_adtstoasc\n- Simplified back to v0.9.54-style MediaSourceInfo\n- Works for web, iOS, and Android without transcoding hacks",
-        "checksum": "c2d7edfd1c0324fede28db3c78f260e9",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.66.0/jellyfin-xtream_0.9.66.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-01T20:20:29Z",
-        "version": "0.9.66.0"
       }
     ]
   }
