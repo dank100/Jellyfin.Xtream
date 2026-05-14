@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Remove cached MediaSources from channel items**: VOD and Series channel items no longer include MediaSources in the listing. This forces Jellyfin to call `GetChannelItemMediaInfo` at playback time, ensuring the current base URL is always used even for items already cached in Jellyfin's database.",
+        "checksum": "f879eaaef9d7df4019ff830f0676e50b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.98.0/jellyfin-xtream_0.9.98.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-14T17:45:37Z",
+        "version": "0.9.98.0"
+      },
+      {
         "changelog": "## Changes\n\n- **Fresh URLs at playback time**: VOD and Series channels now implement `IRequiresMediaInfoCallback`, so Jellyfin fetches the stream URL using the current base URL at playback time instead of using cached URLs from when the item was first listed. This fixes playback failures when the IPTV provider changes their domain.\n- No more need to clear channel cache or restart after changing the base URL.",
         "checksum": "95f74489b0e3cbd3c33e8f8e9c47409c",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.97.0/jellyfin-xtream_0.9.97.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T05:50:25Z",
         "version": "0.9.69.0"
-      },
-      {
-        "changelog": "Revert to v0.9.60.0 MultiplexedRestream — known-good for Android TV DirectStream.",
-        "checksum": "27adb076a95c211743f96ae163abab0f",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.68.0/jellyfin-xtream_0.9.68.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T05:30:19Z",
-        "version": "0.9.68.0"
       }
     ]
   }
