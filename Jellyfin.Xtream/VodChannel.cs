@@ -119,14 +119,6 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
         long added = long.Parse(stream.Added, CultureInfo.InvariantCulture);
         ParsedName parsedName = StreamService.ParseName(stream.Name);
 
-        List<MediaSourceInfo> sources =
-        [
-            Plugin.Instance.StreamService.GetMediaSourceInfo(
-                StreamType.Vod,
-                stream.StreamId,
-                stream.ContainerExtension)
-        ];
-
         ChannelItemInfo result = new ChannelItemInfo()
         {
             ContentType = ChannelMediaContentType.Movie,
@@ -134,7 +126,6 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
             Id = $"{StreamService.StreamPrefix}{stream.StreamId}",
             ImageUrl = stream.StreamIcon,
             IsLiveStream = false,
-            MediaSources = sources,
             MediaType = ChannelMediaType.Video,
             Name = parsedName.Title,
             Tags = new List<string>(parsedName.Tags),

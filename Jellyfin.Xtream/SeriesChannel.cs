@@ -199,15 +199,6 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
     {
         Client.Models.SeriesInfo serie = series.Info;
         ParsedName parsedName = StreamService.ParseName(episode.Title);
-        List<MediaSourceInfo> sources =
-        [
-            Plugin.Instance.StreamService.GetMediaSourceInfo(
-                StreamType.Series,
-                episode.EpisodeId,
-                episode.ContainerExtension,
-                videoInfo: episode.Info?.Video,
-                audioInfo: episode.Info?.Audio)
-        ];
 
         string? cover = episode.Info?.MovieImage;
         cover ??= season?.Cover;
@@ -221,7 +212,6 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
             Id = StreamService.ToGuid(StreamService.EpisodePrefix, 0, 0, episode.EpisodeId).ToString(),
             IndexNumber = episode.EpisodeNum,
             IsLiveStream = false,
-            MediaSources = sources,
             MediaType = ChannelMediaType.Video,
             Name = $"Episode {episode.EpisodeNum}",
             Overview = episode.Info?.Plot,
