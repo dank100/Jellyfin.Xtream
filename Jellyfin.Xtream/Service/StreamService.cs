@@ -23,6 +23,7 @@ using System.Threading.Tasks;
 using Jellyfin.Xtream.Client;
 using Jellyfin.Xtream.Client.Models;
 using Jellyfin.Xtream.Configuration;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -34,7 +35,8 @@ namespace Jellyfin.Xtream.Service;
 /// A service for dealing with stream information.
 /// </summary>
 /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
-public partial class StreamService(IXtreamClient xtreamClient)
+/// <param name="appHost">Instance of the <see cref="IServerApplicationHost"/> interface.</param>
+public partial class StreamService(IXtreamClient xtreamClient, IServerApplicationHost appHost)
 {
     /// <summary>
     /// The id prefix for VOD category channel items.
@@ -387,10 +389,27 @@ public partial class StreamService(IXtreamClient xtreamClient)
         }
 
         PluginConfiguration config = Plugin.Instance.Configuration;
-        string uri = $"{config.BaseUrl}{prefix}/{config.Username}/{config.Password}/{id}";
-        if (!string.IsNullOrEmpty(extension))
+        string uri;
+
+        // For VOD and Series, use the plugin's own redirect endpoint so the URL
+        // never goes stale when the IPTV provider changes their domain.
+        if (type == StreamType.Vod)
         {
-            uri += $".{extension}";
+            string baseUrl = appHost.GetSmartApiUrl(System.Net.IPAddress.Any);
+            uri = $"{baseUrl}/Xtream/Vod/{id}/stream";
+        }
+        else if (type == StreamType.Series)
+        {
+            string baseUrl = appHost.GetSmartApiUrl(System.Net.IPAddress.Any);
+            uri = $"{baseUrl}/Xtream/Series/{id}/stream";
+        }
+        else
+        {
+            uri = $"{config.BaseUrl}{prefix}/{config.Username}/{config.Password}/{id}";
+            if (!string.IsNullOrEmpty(extension))
+            {
+                uri += $".{extension}";
+            }
         }
 
         if (type == StreamType.CatchUp)

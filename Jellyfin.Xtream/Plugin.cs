@@ -22,6 +22,7 @@ using Jellyfin.Xtream.Configuration;
 using Jellyfin.Xtream.Service;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
+using MediaBrowser.Controller;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.Tasks;
@@ -42,7 +43,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <param name="xmlSerializer">Instance of the <see cref="IXmlSerializer"/> interface.</param>
     /// <param name="taskManager">Instance of the <see cref="ITaskManager"/> interface.</param>
     /// <param name="xtreamClient">Instance of the <see cref="IXtreamClient"/> interface.</param>
-    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, ITaskManager taskManager, IXtreamClient xtreamClient)
+    /// <param name="appHost">Instance of the <see cref="IServerApplicationHost"/> interface.</param>
+    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, ITaskManager taskManager, IXtreamClient xtreamClient, IServerApplicationHost appHost)
         : base(applicationPaths, xmlSerializer)
     {
         _instance = this;
@@ -52,7 +54,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             client.UpdateUserAgent();
         }
 
-        StreamService = new(xtreamClient);
+        StreamService = new(xtreamClient, appHost);
         TaskService = new(taskManager);
     }
 

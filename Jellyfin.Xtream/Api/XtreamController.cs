@@ -520,6 +520,36 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     }
 
     /// <summary>
+    /// Redirects to the actual VOD stream URL using the current base URL configuration.
+    /// This endpoint never changes, so Jellyfin's cached media sources remain valid
+    /// even when the IPTV provider changes their domain.
+    /// </summary>
+    /// <param name="streamId">The Xtream stream ID.</param>
+    /// <returns>A redirect to the real stream URL.</returns>
+    [AllowAnonymous]
+    [HttpGet("Vod/{streamId}/stream")]
+    public ActionResult GetVodStream(int streamId)
+    {
+        PluginConfiguration config = Plugin.Instance.Configuration;
+        string uri = $"{config.BaseUrl}/movie/{config.Username}/{config.Password}/{streamId}";
+        return Redirect(uri);
+    }
+
+    /// <summary>
+    /// Redirects to the actual series episode stream URL using the current base URL configuration.
+    /// </summary>
+    /// <param name="episodeId">The Xtream episode ID.</param>
+    /// <returns>A redirect to the real stream URL.</returns>
+    [AllowAnonymous]
+    [HttpGet("Series/{episodeId}/stream")]
+    public ActionResult GetSeriesStream(int episodeId)
+    {
+        PluginConfiguration config = Plugin.Instance.Configuration;
+        string uri = $"{config.BaseUrl}/series/{config.Username}/{config.Password}/{episodeId}";
+        return Redirect(uri);
+    }
+
+    /// <summary>
     /// Serves the HLS playlist for a multiplexed channel.
     /// Anonymous access allowed — stream ID acts as an access token.
     /// </summary>
