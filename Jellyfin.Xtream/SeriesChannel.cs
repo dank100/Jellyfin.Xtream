@@ -35,7 +35,7 @@ namespace Jellyfin.Xtream;
 /// The Xtream Codes API channel.
 /// </summary>
 /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
-public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMediaSourceDisplay
+public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMediaSourceDisplay, IRequiresMediaInfoCallback
 {
     /// <inheritdoc />
     public string? Name => "Xtream Series";
@@ -284,5 +284,21 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
     public bool IsEnabledFor(string userId)
     {
         return Plugin.Instance.Configuration.IsSeriesVisible;
+    }
+
+    /// <inheritdoc />
+    public Task<IEnumerable<MediaSourceInfo>> GetChannelItemMediaInfo(string id, CancellationToken cancellationToken)
+    {
+        Guid guid = Guid.Parse(id);
+        StreamService.FromGuid(guid, out int prefix, out int _, out int _, out int episodeId);
+        if (prefix == StreamService.EpisodePrefix)
+        {
+            var source = Plugin.Instance.StreamService.GetMediaSourceInfo(
+                StreamType.Series,
+                episodeId);
+            return Task.FromResult<IEnumerable<MediaSourceInfo>>([source]);
+        }
+
+        return Task.FromResult<IEnumerable<MediaSourceInfo>>([]);
     }
 }

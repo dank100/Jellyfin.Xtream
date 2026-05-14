@@ -35,7 +35,7 @@ namespace Jellyfin.Xtream;
 /// The Xtream Codes API channel.
 /// </summary>
 /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
-public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSourceDisplay
+public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSourceDisplay, IRequiresMediaInfoCallback
 {
     /// <inheritdoc />
     public string? Name => "Xtream Video On-Demand";
@@ -173,5 +173,24 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
     public bool IsEnabledFor(string userId)
     {
         return Plugin.Instance.Configuration.IsVodVisible;
+    }
+
+    /// <inheritdoc />
+    public Task<IEnumerable<MediaSourceInfo>> GetChannelItemMediaInfo(string id, CancellationToken cancellationToken)
+    {
+        // Channel item ID format: "{StreamPrefix}{streamId}"
+        string prefix = StreamService.StreamPrefix.ToString(CultureInfo.InvariantCulture);
+        string idStr = id.StartsWith(prefix, StringComparison.Ordinal)
+            ? id[prefix.Length..]
+            : id;
+        if (int.TryParse(idStr, CultureInfo.InvariantCulture, out int streamId))
+        {
+            var source = Plugin.Instance.StreamService.GetMediaSourceInfo(
+                StreamType.Vod,
+                streamId);
+            return Task.FromResult<IEnumerable<MediaSourceInfo>>([source]);
+        }
+
+        return Task.FromResult<IEnumerable<MediaSourceInfo>>([]);
     }
 }
