@@ -153,17 +153,15 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
 
         IEnumerable<Category> categories = await Plugin.Instance.StreamService.GetVodCategories(cancellationToken).ConfigureAwait(false);
         var categoryList = categories.ToList();
-        logger.LogInformation("Fetching VOD streams from {Count} categories in parallel", categoryList.Count);
+        logger.LogInformation("Fetching VOD streams from {Count} categories", categoryList.Count);
 
-        // Fetch all categories in parallel to avoid timeout
-        var tasks = categoryList.Select(async category =>
+        List<ChannelItemInfo> items = [];
+        foreach (Category category in categoryList)
         {
             IEnumerable<StreamInfo> streams = await Plugin.Instance.StreamService.GetVodStreams(category.CategoryId, cancellationToken).ConfigureAwait(false);
-            return await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false);
-        });
-
-        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
-        List<ChannelItemInfo> items = results.SelectMany(r => r).ToList();
+            ChannelItemInfo[] categoryItems = await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false);
+            items.AddRange(categoryItems);
+        }
 
         _cachedItems = items;
         _cacheExpiry = DateTime.UtcNow + CacheDuration;
