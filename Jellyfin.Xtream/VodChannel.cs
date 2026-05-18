@@ -119,11 +119,17 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
         long added = long.Parse(stream.Added, CultureInfo.InvariantCulture);
         ParsedName parsedName = StreamService.ParseName(stream.Name);
 
+        string id = $"{StreamService.StreamPrefix}{stream.StreamId}";
+        if (!string.IsNullOrEmpty(stream.ContainerExtension))
+        {
+            id += $".{stream.ContainerExtension}";
+        }
+
         ChannelItemInfo result = new ChannelItemInfo()
         {
             ContentType = ChannelMediaContentType.Movie,
             DateCreated = DateTimeOffset.FromUnixTimeSeconds(added).DateTime,
-            Id = $"{StreamService.StreamPrefix}{stream.StreamId}",
+            Id = id,
             ImageUrl = stream.StreamIcon,
             IsLiveStream = false,
             MediaType = ChannelMediaType.Video,
@@ -169,16 +175,26 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
     /// <inheritdoc />
     public Task<IEnumerable<MediaSourceInfo>> GetChannelItemMediaInfo(string id, CancellationToken cancellationToken)
     {
-        // Channel item ID format: "{StreamPrefix}{streamId}"
+        // Channel item ID format: "{StreamPrefix}{streamId}" or "{StreamPrefix}{streamId}.{extension}"
         string prefix = StreamService.StreamPrefix.ToString(CultureInfo.InvariantCulture);
         string idStr = id.StartsWith(prefix, StringComparison.Ordinal)
             ? id[prefix.Length..]
             : id;
+
+        string? extension = null;
+        int dotIndex = idStr.IndexOf('.', StringComparison.Ordinal);
+        if (dotIndex >= 0)
+        {
+            extension = idStr[(dotIndex + 1)..];
+            idStr = idStr[..dotIndex];
+        }
+
         if (int.TryParse(idStr, CultureInfo.InvariantCulture, out int streamId))
         {
             var source = Plugin.Instance.StreamService.GetMediaSourceInfo(
                 StreamType.Vod,
-                streamId);
+                streamId,
+                extension: extension);
             return Task.FromResult<IEnumerable<MediaSourceInfo>>([source]);
         }
 

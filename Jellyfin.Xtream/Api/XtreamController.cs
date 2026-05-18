@@ -525,13 +525,16 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     /// even when the IPTV provider changes their domain.
     /// </summary>
     /// <param name="streamId">The Xtream stream ID.</param>
+    /// <param name="extension">Optional container extension (e.g. mp4, mkv).</param>
     /// <returns>A redirect to the real stream URL.</returns>
     [AllowAnonymous]
     [HttpGet("Vod/{streamId}/stream")]
-    public ActionResult GetVodStream(int streamId)
+    [HttpGet("Vod/{streamId}/stream.{extension}")]
+    public ActionResult GetVodStream(int streamId, string? extension = null)
     {
         PluginConfiguration config = Plugin.Instance.Configuration;
-        string uri = $"{config.BaseUrl}/movie/{config.Username}/{config.Password}/{streamId}";
+        string ext = !string.IsNullOrEmpty(extension) ? $".{extension}" : string.Empty;
+        string uri = $"{config.BaseUrl}/movie/{config.Username}/{config.Password}/{streamId}{ext}";
         return Redirect(uri);
     }
 
@@ -539,13 +542,16 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     /// Redirects to the actual series episode stream URL using the current base URL configuration.
     /// </summary>
     /// <param name="episodeId">The Xtream episode ID.</param>
+    /// <param name="extension">Optional container extension (e.g. mp4, mkv).</param>
     /// <returns>A redirect to the real stream URL.</returns>
     [AllowAnonymous]
     [HttpGet("Series/{episodeId}/stream")]
-    public ActionResult GetSeriesStream(int episodeId)
+    [HttpGet("Series/{episodeId}/stream.{extension}")]
+    public ActionResult GetSeriesStream(int episodeId, string? extension = null)
     {
         PluginConfiguration config = Plugin.Instance.Configuration;
-        string uri = $"{config.BaseUrl}/series/{config.Username}/{config.Password}/{episodeId}";
+        string ext = !string.IsNullOrEmpty(extension) ? $".{extension}" : string.Empty;
+        string uri = $"{config.BaseUrl}/series/{config.Username}/{config.Password}/{episodeId}{ext}";
         return Redirect(uri);
     }
 

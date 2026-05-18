@@ -396,12 +396,14 @@ public partial class StreamService(IXtreamClient xtreamClient, IServerApplicatio
         if (type == StreamType.Vod)
         {
             string baseUrl = appHost.GetSmartApiUrl(System.Net.IPAddress.Any);
-            uri = $"{baseUrl}/Xtream/Vod/{id}/stream";
+            string ext = !string.IsNullOrEmpty(extension) ? $".{extension}" : string.Empty;
+            uri = $"{baseUrl}/Xtream/Vod/{id}/stream{ext}";
         }
         else if (type == StreamType.Series)
         {
             string baseUrl = appHost.GetSmartApiUrl(System.Net.IPAddress.Any);
-            uri = $"{baseUrl}/Xtream/Series/{id}/stream";
+            string ext = !string.IsNullOrEmpty(extension) ? $".{extension}" : string.Empty;
+            uri = $"{baseUrl}/Xtream/Series/{id}/stream{ext}";
         }
         else
         {
