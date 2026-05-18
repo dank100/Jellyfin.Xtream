@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Auto-index VOD and Series channel items via AutoRefreshLevels",
+        "checksum": "343c0fd2c4dd9d76614c578066cfb3e3",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.103.0/jellyfin-xtream_0.9.103.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T18:14:46Z",
+        "version": "0.9.103.0"
+      },
+      {
         "changelog": "Enable SupportsTranscoding for VOD/Series media sources",
         "checksum": "02c135d807eeb145d1255876ee6f87d8",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.102.0/jellyfin-xtream_0.9.102.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T07:10:14Z",
         "version": "0.9.74.0"
-      },
-      {
-        "changelog": "Fix Index=-1 from HLS probe to enable DirectStream path",
-        "checksum": "9ba4ec02929dd87dacad3e7a88da5566",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.73.0/jellyfin-xtream_0.9.73.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T06:58:12Z",
-        "version": "0.9.73.0"
       }
     ]
   }
