@@ -37,6 +37,10 @@ namespace Jellyfin.Xtream;
 /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
 public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSourceDisplay, IRequiresMediaInfoCallback
 {
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(1);
+    private List<ChannelItemInfo>? _cachedItems;
+    private DateTime _cacheExpiry = DateTime.MinValue;
+
     /// <inheritdoc />
     public string? Name => "Xtream Video On-Demand";
 
@@ -138,14 +142,32 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
 
     private async Task<ChannelItemResult> GetAllStreams(CancellationToken cancellationToken)
     {
+        if (_cachedItems != null && DateTime.UtcNow < _cacheExpiry)
+        {
+            return new ChannelItemResult()
+            {
+                Items = _cachedItems,
+                TotalRecordCount = _cachedItems.Count
+            };
+        }
+
         IEnumerable<Category> categories = await Plugin.Instance.StreamService.GetVodCategories(cancellationToken).ConfigureAwait(false);
-        List<ChannelItemInfo> items = [];
-        foreach (Category category in categories)
+        var categoryList = categories.ToList();
+        logger.LogInformation("Fetching VOD streams from {Count} categories in parallel", categoryList.Count);
+
+        // Fetch all categories in parallel to avoid timeout
+        var tasks = categoryList.Select(async category =>
         {
             IEnumerable<StreamInfo> streams = await Plugin.Instance.StreamService.GetVodStreams(category.CategoryId, cancellationToken).ConfigureAwait(false);
-            ChannelItemInfo[] categoryItems = await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false);
-            items.AddRange(categoryItems);
-        }
+            return await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false);
+        });
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        List<ChannelItemInfo> items = results.SelectMany(r => r).ToList();
+
+        _cachedItems = items;
+        _cacheExpiry = DateTime.UtcNow + CacheDuration;
+        logger.LogInformation("Cached {Count} VOD items from {Categories} categories", items.Count, categoryList.Count);
 
         return new ChannelItemResult()
         {
