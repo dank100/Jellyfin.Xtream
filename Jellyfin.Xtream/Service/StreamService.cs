@@ -471,6 +471,7 @@ public partial class StreamService(IXtreamClient xtreamClient, IServerApplicatio
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsProbing = true,
+            SupportsTranscoding = !isLive,
             Timestamp = isLive ? TransportStreamTimestamp.Valid : null,
         };
     }
