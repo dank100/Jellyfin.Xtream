@@ -526,13 +526,27 @@ public class XtreamController(IXtreamClient xtreamClient, XmltvParser xmltvParse
     /// </summary>
     /// <param name="streamId">The Xtream stream ID.</param>
     /// <param name="extension">Optional container extension (e.g. mp4, mkv).</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A redirect to the real stream URL.</returns>
     [AllowAnonymous]
     [HttpGet("Vod/{streamId}/stream")]
     [HttpGet("Vod/{streamId}/stream.{extension}")]
-    public ActionResult GetVodStream(int streamId, string? extension = null)
+    public async Task<ActionResult> GetVodStream(int streamId, string? extension = null, CancellationToken cancellationToken = default)
     {
         PluginConfiguration config = Plugin.Instance.Configuration;
+        if (string.IsNullOrEmpty(extension))
+        {
+            try
+            {
+                VodStreamInfo info = await xtreamClient.GetVodInfoAsync(Plugin.Instance.Creds, streamId, cancellationToken).ConfigureAwait(false);
+                extension = info.MovieData?.ContainerExtension;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to look up container extension for VOD stream {StreamId}", streamId);
+            }
+        }
+
         string ext = !string.IsNullOrEmpty(extension) ? $".{extension}" : string.Empty;
         string uri = $"{config.BaseUrl}/movie/{config.Username}/{config.Password}/{streamId}{ext}";
         return Redirect(uri);
