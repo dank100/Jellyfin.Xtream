@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix: Sequential category fetching to avoid 503 from provider",
+        "checksum": "869b9ab0b7a69c3577ff890a20de922e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.2.0/jellyfin-xtream_0.10.2.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T19:15:49Z",
+        "version": "0.10.2.0"
+      },
+      {
         "changelog": "Fix: DataVersion cache invalidation now uses plugin assembly version (was incorrectly using Jellyfin's)",
         "checksum": "90da1ce6ddb088a8e0ff595b6166df8b",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.1.0/jellyfin-xtream_0.10.1.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T07:48:30Z",
         "version": "0.9.78.0"
-      },
-      {
-        "changelog": "Disable SupportsTranscoding to force DirectPlay of HLS URL — eliminates unnecessary ffmpeg remux on iPhone and Android TV",
-        "checksum": "fd81112c4ccac83928f28e0fccbae711",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.77.0/jellyfin-xtream_0.9.77.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T07:44:14Z",
-        "version": "0.9.77.0"
       }
     ]
   }
