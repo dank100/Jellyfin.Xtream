@@ -57,6 +57,7 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
     {
         return new()
         {
+            AutoRefreshLevels = 2,
             ContentTypes = [
                 ChannelMediaContentType.Movie,
             ],

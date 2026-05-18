@@ -57,6 +57,7 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
     {
         return new InternalChannelFeatures
         {
+            AutoRefreshLevels = 4,
             ContentTypes = [
                 ChannelMediaContentType.Episode,
             ],
