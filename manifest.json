@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix: DataVersion cache invalidation now uses plugin assembly version (was incorrectly using Jellyfin's)",
+        "checksum": "90da1ce6ddb088a8e0ff595b6166df8b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.1.0/jellyfin-xtream_0.10.1.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T19:09:29Z",
+        "version": "0.10.1.0"
+      },
+      {
         "changelog": "Fix: Parallel VOD category fetching",
         "checksum": "bfcbd791a21bea7c23165fc5fca81cf2",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.0.0/jellyfin-xtream_0.10.0.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T07:44:14Z",
         "version": "0.9.77.0"
-      },
-      {
-        "changelog": "Probe first segment with ffprobe for real codec metadata (resolution, profile, level, channels) instead of hardcoded values",
-        "checksum": "2a48776d1ecac3b385bf44faa3b3021d",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.76.0/jellyfin-xtream_0.9.76.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T07:37:50Z",
-        "version": "0.9.76.0"
       }
     ]
   }
