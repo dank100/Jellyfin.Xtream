@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Enable SupportsTranscoding for VOD/Series media sources",
+        "checksum": "02c135d807eeb145d1255876ee6f87d8",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.102.0/jellyfin-xtream_0.9.102.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T18:07:55Z",
+        "version": "0.9.102.0"
+      },
+      {
         "changelog": "Look up VOD container extension at redirect time for cached URLs",
         "checksum": "314a71d12d12307bf0f00663b7612cde",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.101.0/jellyfin-xtream_0.9.101.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T06:58:12Z",
         "version": "0.9.73.0"
-      },
-      {
-        "changelog": "Add getter to counter Normalize() DirectStream override + probing + skip first segment",
-        "checksum": "be94b36b1b803621e25833a6fb7e2d6e",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.72.0/jellyfin-xtream_0.9.72.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T06:53:17Z",
-        "version": "0.9.72.0"
       }
     ]
   }
