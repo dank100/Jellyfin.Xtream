@@ -93,14 +93,7 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
         {
             if (string.IsNullOrEmpty(query.FolderId))
             {
-                return await GetCategories(cancellationToken).ConfigureAwait(false);
-            }
-
-            Guid guid = Guid.Parse(query.FolderId);
-            StreamService.FromGuid(guid, out int prefix, out int categoryId, out int _, out int _);
-            if (prefix == StreamService.VodCategoryPrefix)
-            {
-                return await GetStreams(categoryId, cancellationToken).ConfigureAwait(false);
+                return await GetAllStreams(cancellationToken).ConfigureAwait(false);
             }
 
             return new ChannelItemResult()
@@ -143,28 +136,22 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
         return Task.FromResult(result);
     }
 
-    private async Task<ChannelItemResult> GetCategories(CancellationToken cancellationToken)
+    private async Task<ChannelItemResult> GetAllStreams(CancellationToken cancellationToken)
     {
         IEnumerable<Category> categories = await Plugin.Instance.StreamService.GetVodCategories(cancellationToken).ConfigureAwait(false);
-        List<ChannelItemInfo> items = new List<ChannelItemInfo>(
-            categories.Select((Category category) => StreamService.CreateChannelItemInfo(StreamService.VodCategoryPrefix, category)));
-        return new()
+        List<ChannelItemInfo> items = [];
+        foreach (Category category in categories)
         {
-            Items = items,
-            TotalRecordCount = items.Count
-        };
-    }
+            IEnumerable<StreamInfo> streams = await Plugin.Instance.StreamService.GetVodStreams(category.CategoryId, cancellationToken).ConfigureAwait(false);
+            ChannelItemInfo[] categoryItems = await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false);
+            items.AddRange(categoryItems);
+        }
 
-    private async Task<ChannelItemResult> GetStreams(int categoryId, CancellationToken cancellationToken)
-    {
-        IEnumerable<StreamInfo> streams = await Plugin.Instance.StreamService.GetVodStreams(categoryId, cancellationToken).ConfigureAwait(false);
-        List<ChannelItemInfo> items = [.. await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false)];
-        ChannelItemResult result = new ChannelItemResult()
+        return new ChannelItemResult()
         {
             Items = items,
             TotalRecordCount = items.Count
         };
-        return result;
     }
 
     /// <inheritdoc />
