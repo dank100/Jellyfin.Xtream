@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Flatten VOD channel for immediate indexing (no category folders)",
+        "checksum": "68d078ad81e8d16a1c6a4e53983d3930",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.104.0/jellyfin-xtream_0.9.104.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T18:28:26Z",
+        "version": "0.9.104.0"
+      },
+      {
         "changelog": "Auto-index VOD and Series channel items via AutoRefreshLevels",
         "checksum": "343c0fd2c4dd9d76614c578066cfb3e3",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.103.0/jellyfin-xtream_0.9.103.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T07:18:34Z",
         "version": "0.9.75.0"
-      },
-      {
-        "changelog": "Disable probing, add synthetic h264+aac MediaStreams to fix Android TV codec detection",
-        "checksum": "583a0ffcc93da5a8d710e67c06227fef",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.74.0/jellyfin-xtream_0.9.74.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T07:10:14Z",
-        "version": "0.9.74.0"
       }
     ]
   }
