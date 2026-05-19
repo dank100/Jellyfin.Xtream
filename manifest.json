@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Flatten Series channel for indexing (same as VOD)",
+        "checksum": "5eda8f66fbb95ad19c7c5903a791afdb",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.4.0/jellyfin-xtream_0.10.4.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-19T05:51:46Z",
+        "version": "0.10.4.0"
+      },
+      {
         "changelog": "Fix: Retry with backoff for VOD fetching",
         "checksum": "20814e8077548ec9d5d16fe82c78c63e",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.3.0/jellyfin-xtream_0.10.3.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T08:23:01Z",
         "version": "0.9.80.0"
-      },
-      {
-        "changelog": "Force DirectPlay only — disable DirectStream and Transcoding to fix iPhone playback",
-        "checksum": "8dd05626846a1b548c7437b124d22330",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.79.0/jellyfin-xtream_0.9.79.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T07:57:49Z",
-        "version": "0.9.79.0"
       }
     ]
   }
