@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Add scheduled task 'Index Xtream Series Episodes' - automatically indexes all series/seasons/episodes daily at 4 AM.",
+        "checksum": "262b57766b79ddaad3067d01f6014950",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.6.0/jellyfin-xtream_0.10.6.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-19T06:45:36Z",
+        "version": "0.10.6.0"
+      },
+      {
         "changelog": "Fix: Add SeriesName to episodes for faster association",
         "checksum": "875d0d924948cff28106b26f11eb115a",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.5.0/jellyfin-xtream_0.10.5.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-04T13:17:30Z",
         "version": "0.9.82.0"
-      },
-      {
-        "changelog": "Revert to v0.9.76 approach: no getter overrides, proper MediaStreams. iPhone DirectPlays, Android TV copy-mode remux.",
-        "checksum": "8daa23d8425a299ccf91512cbb22c97d",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.81.0/jellyfin-xtream_0.9.81.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T08:33:45Z",
-        "version": "0.9.81.0"
       }
     ]
   }
