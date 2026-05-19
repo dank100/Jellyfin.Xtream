@@ -8,19 +8,11 @@
     "owner": "Kevinjil",
     "versions": [
       {
-        "version": "0.10.6.0",
-        "changelog": "Add scheduled task to index all series episodes daily at 4 AM.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.6.0/jellyfin-xtream-0.10.6.0.zip",
-        "checksum": "d9136f7eba521fa125ee957f709e7447",
-        "timestamp": "2026-05-19T06:40:00Z"
-      },
-      {
         "changelog": "Add scheduled task 'Index Xtream Series Episodes' - automatically indexes all series/seasons/episodes daily at 4 AM.",
-        "checksum": "262b57766b79ddaad3067d01f6014950",
+        "checksum": "3672ee8dabc11dcc99516d78731a5c56",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.6.0/jellyfin-xtream_0.10.6.0.zip",
         "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-19T06:45:36Z",
+        "timestamp": "2026-05-19T07:00:18Z",
         "version": "0.10.6.0"
       },
       {
@@ -144,7 +136,7 @@
         "version": "0.9.96.0"
       },
       {
-        "changelog": "## Changes\n\n- **Stricter parenthesized episode pattern**: Bare `(15)` no longer matches as an episode number \u2014 only the `(8/12)` format (with total count) is recognized. This fixes false series detection for sport programmes like IndyCar Highlights where `(15)` refers to a race round or broadcast time.\n- Includes v0.9.94.0 sport series detection (season-only = sport, only record live titles)",
+        "changelog": "## Changes\n\n- **Stricter parenthesized episode pattern**: Bare `(15)` no longer matches as an episode number — only the `(8/12)` format (with total count) is recognized. This fixes false series detection for sport programmes like IndyCar Highlights where `(15)` refers to a race round or broadcast time.\n- Includes v0.9.94.0 sport series detection (season-only = sport, only record live titles)",
         "checksum": "bd126d0a63e1756285c023645144267b",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.95.0/jellyfin-xtream_0.9.95.0.zip",
         "targetAbi": "10.11.0.0",
@@ -152,7 +144,7 @@
         "version": "0.9.95.0"
       },
       {
-        "changelog": "## Changes\n\n- **Sport series detection**: Season-only EPG matches (e.g. `S\u00e6son: 26`) are now marked as sport series (`IsSeries=true`, `IsSport=true`). The 'Record Series' button appears in the guide for sport events.\n- **Live-only recording for sport**: The series timer scheduler only creates recording timers for sport programmes whose title contains 'live' \u2014 filtering out highlights, replays, and studio shows.\n- Regular TV series (with episode numbers) are unaffected.",
+        "changelog": "## Changes\n\n- **Sport series detection**: Season-only EPG matches (e.g. `Sæson: 26`) are now marked as sport series (`IsSeries=true`, `IsSport=true`). The 'Record Series' button appears in the guide for sport events.\n- **Live-only recording for sport**: The series timer scheduler only creates recording timers for sport programmes whose title contains 'live' — filtering out highlights, replays, and studio shows.\n- Regular TV series (with episode numbers) are unaffected.",
         "checksum": "b08c59016d1cd6b4771114fb5e9b526c",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.94.0/jellyfin-xtream_0.9.94.0.zip",
         "targetAbi": "10.11.0.0",
@@ -160,7 +152,7 @@
         "version": "0.9.94.0"
       },
       {
-        "changelog": "## Changes\n\n- **Season-only no longer marks as series**: `S\u00e6son: 26` without an episode number is no longer detected as a TV series. Sports events like Liga Portugal use season numbers for the competition year, not TV seasons. An episode number is now required for `IsSeries=true`.\n- Includes all fixes from v0.9.92.0 (word boundary regex, empty playlist fail-fast)",
+        "changelog": "## Changes\n\n- **Season-only no longer marks as series**: `Sæson: 26` without an episode number is no longer detected as a TV series. Sports events like Liga Portugal use season numbers for the competition year, not TV seasons. An episode number is now required for `IsSeries=true`.\n- Includes all fixes from v0.9.92.0 (word boundary regex, empty playlist fail-fast)",
         "checksum": "74dc8fbeb58204547ae42e4ef3602081",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.93.0/jellyfin-xtream_0.9.93.0.zip",
         "targetAbi": "10.11.0.0",
@@ -168,7 +160,7 @@
         "version": "0.9.93.0"
       },
       {
-        "changelog": "## Changes\n\n- **Fix false series detection**: Added word boundaries to EPG regex patterns \u2014 words like 'model', 'prep' no longer falsely match 'Del', 'Ep' patterns\n- **Fix empty multiplexer playlist**: MultiplexedRestream.Open() now throws an error if no segments are produced within 60s, instead of silently serving an empty playlist that crashes ffmpeg\n- 3 new tests for word boundary edge cases (53 total)",
+        "changelog": "## Changes\n\n- **Fix false series detection**: Added word boundaries to EPG regex patterns — words like 'model', 'prep' no longer falsely match 'Del', 'Ep' patterns\n- **Fix empty multiplexer playlist**: MultiplexedRestream.Open() now throws an error if no segments are produced within 60s, instead of silently serving an empty playlist that crashes ffmpeg\n- 3 new tests for word boundary edge cases (53 total)",
         "checksum": "276e91e980106ae17ba2fd320fb7d25f",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.92.0/jellyfin-xtream_0.9.92.0.zip",
         "targetAbi": "10.11.0.0",
@@ -176,7 +168,7 @@
         "version": "0.9.92.0"
       },
       {
-        "changelog": "## Changes\n\n- **Fix recording playback black screen**: Serve HLS playlist inline instead of 302 redirect \u2014 fixes players that don't follow redirects for m3u8\n- Use absolute segment URLs so players resolve them correctly regardless of request origin\n- Re-enable SupportsTranscoding in RecordingRestream so Jellyfin routes through DynamicHls (where our filter intercepts)\n- Fix live TV interference when recording simultaneously",
+        "changelog": "## Changes\n\n- **Fix recording playback black screen**: Serve HLS playlist inline instead of 302 redirect — fixes players that don't follow redirects for m3u8\n- Use absolute segment URLs so players resolve them correctly regardless of request origin\n- Re-enable SupportsTranscoding in RecordingRestream so Jellyfin routes through DynamicHls (where our filter intercepts)\n- Fix live TV interference when recording simultaneously",
         "checksum": "26dd2d5971818f50a2e34de6ef0fbbdf",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.91.0/jellyfin-xtream_0.9.91.0.zip",
         "targetAbi": "10.11.0.0",
@@ -192,7 +184,7 @@
         "version": "0.9.90.0"
       },
       {
-        "changelog": "## EPG Series Identification & Recording\n\n- **EPG Series Parser**: Extracts season/episode metadata from programme titles and descriptions using multi-language regex patterns (Danish, Swedish, English, compact S01E10 format)\n- **Reproducible Series IDs**: Generates deterministic SHA256-based SeriesId from normalized show titles, enabling Jellyfin's 'Record Series' functionality\n- **Series Timer Auto-Scheduling**: Polls EPG every 5 minutes to create individual recording timers for series timer subscriptions\n- **RecordNewOnly with High-Water Mark**: Only schedules episodes newer than the highest previously scheduled season+episode\n- **Danish EPG format support**: Handles 'S\u00e6son: N. Episode: N.' with colons and periods",
+        "changelog": "## EPG Series Identification & Recording\n\n- **EPG Series Parser**: Extracts season/episode metadata from programme titles and descriptions using multi-language regex patterns (Danish, Swedish, English, compact S01E10 format)\n- **Reproducible Series IDs**: Generates deterministic SHA256-based SeriesId from normalized show titles, enabling Jellyfin's 'Record Series' functionality\n- **Series Timer Auto-Scheduling**: Polls EPG every 5 minutes to create individual recording timers for series timer subscriptions\n- **RecordNewOnly with High-Water Mark**: Only schedules episodes newer than the highest previously scheduled season+episode\n- **Danish EPG format support**: Handles 'Sæson: N. Episode: N.' with colons and periods",
         "checksum": "bdb3c010d1faeae5b329f93db66fdc80",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.89.0/Jellyfin.Xtream-v0.9.89.0.zip",
         "targetAbi": "10.11.0.0",
@@ -200,7 +192,7 @@
         "version": "0.9.89.0"
       },
       {
-        "changelog": "Fix web seeking (revert PDT tags). Skip redirect for Android TV \u2014 let Jellyfin remux for seekbar support.",
+        "changelog": "Fix web seeking (revert PDT tags). Skip redirect for Android TV — let Jellyfin remux for seekbar support.",
         "checksum": "083955caf542da9584354eae50096083",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.88.0/jellyfin-xtream_0.9.88.0.zip",
         "targetAbi": "10.11.0.0",
