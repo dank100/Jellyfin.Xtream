@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix: Retry with backoff for VOD fetching",
+        "checksum": "20814e8077548ec9d5d16fe82c78c63e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.3.0/jellyfin-xtream_0.10.3.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-19T03:38:25Z",
+        "version": "0.10.3.0"
+      },
+      {
         "changelog": "Fix: Sequential category fetching to avoid 503 from provider",
         "checksum": "869b9ab0b7a69c3577ff890a20de922e",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.2.0/jellyfin-xtream_0.10.2.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-02T07:57:49Z",
         "version": "0.9.79.0"
-      },
-      {
-        "changelog": "Counter Normalize() SupportsTranscoding=true override in getter to force DirectPlay",
-        "checksum": "b8868087428ee0fa162fb33277634310",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.78.0/jellyfin-xtream_0.9.78.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-02T07:48:30Z",
-        "version": "0.9.78.0"
       }
     ]
   }
