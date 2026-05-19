@@ -200,6 +200,7 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
     {
         Client.Models.SeriesInfo serie = series.Info;
         ParsedName parsedName = StreamService.ParseName(episode.Title);
+        ParsedName seriesParsedName = StreamService.ParseName(serie.Name);
 
         string? cover = episode.Info?.MovieImage;
         cover ??= season?.Cover;
@@ -212,6 +213,7 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
             Genres = GetGenres(serie.Genre),
             Id = StreamService.ToGuid(StreamService.EpisodePrefix, 0, 0, episode.EpisodeId).ToString(),
             IndexNumber = episode.EpisodeNum,
+            ImageUrl = cover,
             IsLiveStream = false,
             MediaType = ChannelMediaType.Video,
             Name = $"Episode {episode.EpisodeNum}",
@@ -219,6 +221,7 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
             ParentIndexNumber = episode.Season,
             People = GetPeople(serie.Cast),
             RunTimeTicks = episode.Info?.DurationSecs * TimeSpan.TicksPerSecond,
+            SeriesName = seriesParsedName.Title,
             Tags = new(parsedName.Tags),
             Type = ChannelItemType.Media,
         };
