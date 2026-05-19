@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Xtream.Client.Models;
@@ -158,9 +159,33 @@ public class VodChannel(ILogger<VodChannel> logger) : IChannel, IDisableMediaSou
         List<ChannelItemInfo> items = [];
         foreach (Category category in categoryList)
         {
-            IEnumerable<StreamInfo> streams = await Plugin.Instance.StreamService.GetVodStreams(category.CategoryId, cancellationToken).ConfigureAwait(false);
-            ChannelItemInfo[] categoryItems = await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false);
-            items.AddRange(categoryItems);
+            // Retry with backoff if the provider resets the connection
+            ChannelItemInfo[]? categoryItems = null;
+            for (int attempt = 0; attempt < 3 && categoryItems == null; attempt++)
+            {
+                try
+                {
+                    if (attempt > 0)
+                    {
+                        await Task.Delay(attempt * 2000, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    IEnumerable<StreamInfo> streams = await Plugin.Instance.StreamService.GetVodStreams(category.CategoryId, cancellationToken).ConfigureAwait(false);
+                    categoryItems = await Task.WhenAll(streams.Select(CreateChannelItemInfo)).ConfigureAwait(false);
+                }
+                catch (HttpRequestException ex) when (attempt < 2)
+                {
+                    logger.LogWarning(ex, "Attempt {Attempt} failed for category {CategoryId}, retrying", attempt + 1, category.CategoryId);
+                }
+            }
+
+            if (categoryItems != null)
+            {
+                items.AddRange(categoryItems);
+            }
+
+            // Brief delay between requests to avoid rate limiting
+            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
         }
 
         _cachedItems = items;
