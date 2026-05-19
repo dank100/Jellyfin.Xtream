@@ -22,6 +22,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -47,6 +48,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ConnectionMultiplexer>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<ConnectionMultiplexer>());
         serviceCollection.AddSingleton<IMediaSourceProvider, RecordingMediaSourceProvider>();
+        serviceCollection.AddSingleton<IScheduledTask, SeriesIndexTask>();
 
         // Register global MVC action filter to intercept DynamicHls requests for recordings.
         // Use ServiceFilter so the filter is resolved from DI on every request.
