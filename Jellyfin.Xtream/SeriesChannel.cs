@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Xtream.Client.Models;
@@ -37,6 +38,10 @@ namespace Jellyfin.Xtream;
 /// <param name="logger">Instance of the <see cref="ILogger"/> interface.</param>
 public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMediaSourceDisplay, IRequiresMediaInfoCallback
 {
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(1);
+    private List<ChannelItemInfo>? _cachedItems;
+    private DateTime _cacheExpiry = DateTime.MinValue;
+
     /// <inheritdoc />
     public string? Name => "Xtream Series";
 
@@ -94,16 +99,11 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
         {
             if (string.IsNullOrEmpty(query.FolderId))
             {
-                return await GetCategories(cancellationToken).ConfigureAwait(false);
+                return await GetAllSeries(cancellationToken).ConfigureAwait(false);
             }
 
             Guid guid = Guid.Parse(query.FolderId);
             StreamService.FromGuid(guid, out int prefix, out int categoryId, out int seriesId, out int seasonId);
-            if (prefix == StreamService.SeriesCategoryPrefix)
-            {
-                return await GetSeries(categoryId, cancellationToken).ConfigureAwait(false);
-            }
-
             if (prefix == StreamService.SeriesPrefix)
             {
                 return await GetSeasons(seriesId, cancellationToken).ConfigureAwait(false);
@@ -224,23 +224,56 @@ public class SeriesChannel(ILogger<SeriesChannel> logger) : IChannel, IDisableMe
         };
     }
 
-    private async Task<ChannelItemResult> GetCategories(CancellationToken cancellationToken)
+    private async Task<ChannelItemResult> GetAllSeries(CancellationToken cancellationToken)
     {
-        IEnumerable<Category> categories = await Plugin.Instance.StreamService.GetSeriesCategories(cancellationToken).ConfigureAwait(false);
-        List<ChannelItemInfo> items = new(
-            categories.Select((Category category) => StreamService.CreateChannelItemInfo(StreamService.SeriesCategoryPrefix, category)));
-        return new()
+        if (_cachedItems != null && DateTime.UtcNow < _cacheExpiry)
         {
-            Items = items,
-            TotalRecordCount = items.Count
-        };
-    }
+            return new ChannelItemResult()
+            {
+                Items = _cachedItems,
+                TotalRecordCount = _cachedItems.Count
+            };
+        }
 
-    private async Task<ChannelItemResult> GetSeries(int categoryId, CancellationToken cancellationToken)
-    {
-        IEnumerable<Series> series = await Plugin.Instance.StreamService.GetSeries(categoryId, cancellationToken).ConfigureAwait(false);
-        List<ChannelItemInfo> items = new(series.Select(CreateChannelItemInfo));
-        return new()
+        IEnumerable<Category> categories = await Plugin.Instance.StreamService.GetSeriesCategories(cancellationToken).ConfigureAwait(false);
+        var categoryList = categories.ToList();
+        logger.LogInformation("Fetching series from {Count} categories", categoryList.Count);
+
+        List<ChannelItemInfo> items = [];
+        foreach (Category category in categoryList)
+        {
+            List<ChannelItemInfo>? categoryItems = null;
+            for (int attempt = 0; attempt < 3 && categoryItems == null; attempt++)
+            {
+                try
+                {
+                    if (attempt > 0)
+                    {
+                        await Task.Delay(attempt * 2000, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    IEnumerable<Series> series = await Plugin.Instance.StreamService.GetSeries(category.CategoryId, cancellationToken).ConfigureAwait(false);
+                    categoryItems = new List<ChannelItemInfo>(series.Select(CreateChannelItemInfo));
+                }
+                catch (HttpRequestException ex) when (attempt < 2)
+                {
+                    logger.LogWarning(ex, "Attempt {Attempt} failed for series category {CategoryId}, retrying", attempt + 1, category.CategoryId);
+                }
+            }
+
+            if (categoryItems != null)
+            {
+                items.AddRange(categoryItems);
+            }
+
+            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+        }
+
+        _cachedItems = items;
+        _cacheExpiry = DateTime.UtcNow + CacheDuration;
+        logger.LogInformation("Cached {Count} series from {Categories} categories", items.Count, categoryList.Count);
+
+        return new ChannelItemResult()
         {
             Items = items,
             TotalRecordCount = items.Count
