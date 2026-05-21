@@ -41,6 +41,11 @@ public class WrappedBufferStream(int bufferSize) : Stream
     /// </summary>
     public long TotalBytesWritten { get; private set; }
 
+    /// <summary>
+    /// Gets a value indicating whether the writer has finished and no more data will arrive.
+    /// </summary>
+    public bool IsCompleted { get; private set; }
+
     /// <inheritdoc />
     public override long Position
     {
@@ -90,5 +95,13 @@ public class WrappedBufferStream(int bufferSize) : Stream
     public override void Flush()
     {
         // Do nothing
+    }
+
+    /// <summary>
+    /// Marks the stream as completed so readers return EOF instead of blocking.
+    /// </summary>
+    public void Complete()
+    {
+        IsCompleted = true;
     }
 }

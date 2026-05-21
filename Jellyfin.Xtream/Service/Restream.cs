@@ -111,37 +111,12 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
         string channelId = MediaSource.Id;
         _logger.LogInformation("Starting restream for channel {ChannelId}.", channelId);
 
-        // Response stream is disposed manually.
-        HttpResponseMessage response = await _httpClientFactory.CreateClient(NamedClient.Default)
-            .GetAsync(_url, HttpCompletionOption.ResponseHeadersRead, openCancellationToken)
-            .ConfigureAwait(true);
-        _logger.LogDebug("Stream for channel {ChannelId} using url {Url}", channelId, _url);
+        await ConnectUpstream(openCancellationToken).ConfigureAwait(false);
 
-        // Handle a manual redirect in the case of a HTTPS to HTTP downgrade.
-        if (_redirects.Contains(response.StatusCode))
-        {
-            _logger.LogDebug("Stream for channel {ChannelId} redirected to url {Url}", channelId, response.Headers.Location);
-            response = await _httpClientFactory.CreateClient(NamedClient.Default)
-                .GetAsync(response.Headers.Location, HttpCompletionOption.ResponseHeadersRead, openCancellationToken)
-                .ConfigureAwait(true);
-        }
-
-        _inputStream = await response.Content.ReadAsStreamAsync(CancellationToken.None).ConfigureAwait(false);
-        _copyTask = _inputStream.CopyToAsync(_buffer, _tokenSource.Token)
-            .ContinueWith(
-                (Task t) =>
-                {
-                    _logger.LogInformation("Restream for channel {ChannelId} finished with state {Status}", MediaSource.Id, t.Status);
-                    _inputStream.Close();
-                    _inputStream = null;
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.None,
-                TaskScheduler.Default);
+        // Start the background reconnection loop
+        _copyTask = RunStreamingLoop(_tokenSource.Token);
 
         // Wait for enough data to contain at least one keyframe with SPS/PPS NAL units.
-        // At 20Mbps, keyframes are typically 2-5 seconds apart = 5-12MB. We need at least
-        // one keyframe so both Jellyfin's probe and the SPS-seeking read stream work correctly.
         const int minBytes = 2 * 1024 * 1024;
         const int maxWaitMs = 8000;
         const int pollMs = 50;
@@ -157,6 +132,118 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
             channelId,
             _buffer.TotalBytesWritten,
             waited);
+    }
+
+    /// <summary>
+    /// Opens the HTTP connection to the upstream Xtream provider.
+    /// </summary>
+    private async Task ConnectUpstream(CancellationToken cancellationToken)
+    {
+        HttpResponseMessage response = await _httpClientFactory.CreateClient(NamedClient.Default)
+            .GetAsync(_url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(true);
+        _logger.LogDebug("Stream for channel {ChannelId} using url {Url}", MediaSource.Id, _url);
+
+        // Handle a manual redirect in the case of a HTTPS to HTTP downgrade.
+        if (_redirects.Contains(response.StatusCode))
+        {
+            _logger.LogDebug("Stream for channel {ChannelId} redirected to url {Url}", MediaSource.Id, response.Headers.Location);
+            response = await _httpClientFactory.CreateClient(NamedClient.Default)
+                .GetAsync(response.Headers.Location, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(true);
+        }
+
+        _inputStream = await response.Content.ReadAsStreamAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Continuously reads from the upstream and auto-reconnects on failure.
+    /// Marks the buffer as completed only when cancellation is requested or
+    /// reconnection fails after all retries.
+    /// </summary>
+    private async Task RunStreamingLoop(CancellationToken cancellationToken)
+    {
+        const int maxRetries = 5;
+        const int baseDelayMs = 1000;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (_inputStream != null)
+                {
+                    await _inputStream.CopyToAsync(_buffer, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Restream for channel {ChannelId} upstream read error.", MediaSource.Id);
+            }
+
+            // Upstream disconnected — attempt reconnection
+            if (_inputStream != null)
+            {
+                await _inputStream.DisposeAsync().ConfigureAwait(false);
+                _inputStream = null;
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            _logger.LogInformation("Restream for channel {ChannelId} upstream disconnected, attempting reconnection.", MediaSource.Id);
+
+            bool reconnected = false;
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                int delayMs = baseDelayMs * attempt;
+                await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
+
+                try
+                {
+                    await ConnectUpstream(cancellationToken).ConfigureAwait(false);
+                    _logger.LogInformation(
+                        "Restream for channel {ChannelId} reconnected on attempt {Attempt}.",
+                        MediaSource.Id,
+                        attempt);
+                    reconnected = true;
+                    break;
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Restream for channel {ChannelId} reconnection attempt {Attempt}/{MaxRetries} failed.",
+                        MediaSource.Id,
+                        attempt,
+                        maxRetries);
+                }
+            }
+
+            if (!reconnected)
+            {
+                _logger.LogError("Restream for channel {ChannelId} failed to reconnect after {MaxRetries} attempts.", MediaSource.Id, maxRetries);
+                break;
+            }
+        }
+
+        // Signal readers that no more data will arrive
+        _buffer.Complete();
+        _logger.LogInformation("Restream for channel {ChannelId} streaming loop ended.", MediaSource.Id);
     }
 
     /// <inheritdoc />

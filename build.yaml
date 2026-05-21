@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.10.7.0"
+version: "0.10.8.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -12,6 +12,7 @@ owner: "Kevinjil"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  Add scheduled task "Index Xtream Series Episodes" that automatically browses
-  all series and seasons via the channel manager, ensuring episodes are persisted
-  to the Jellyfin database and visible in clients. Runs daily at 4 AM by default.
+  Fix live stream crashes: auto-reconnect when upstream Xtream provider drops
+  the connection (up to 5 retries with backoff). Fix A/V desync by improving
+  MPEG-TS keyframe seeking to use RAI flag and proper PAT/PMT parsing instead
+  of fragile SPS NAL byte scanning. Signal EOF to ffmpeg when stream truly ends.
