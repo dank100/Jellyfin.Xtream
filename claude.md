@@ -59,10 +59,25 @@ jprm plugin build Jellyfin.Xtream
 ## Deployment
 
 - **Production**: https://boxer.kristiansen.cf
+- **API Key**: 2947d3c7305b4564a1808852d097039a
 - **Fork remote**: `fork` → dank100/Jellyfin.Xtream
 - **Branch**: `feature/recording-and-epg-timezone`
 - **Manifest branch**: `manifest`
 - **Jellyfin version**: 10.11.5
+
+### Release Process
+1. Bump version in **both** `build.yaml` and `Jellyfin.Xtream.csproj` (AssemblyVersion)
+2. Commit, push to fork
+3. Create a GitHub release: `gh release create v{version} --repo dank100/Jellyfin.Xtream --target feature/recording-and-epg-timezone --title "v{version}" --notes "..."`
+4. CI ("🚀 Publish Plugin" workflow) automatically builds the DLL and attaches it to the release
+5. Wait for CI to complete: `gh run list --repo dank100/Jellyfin.Xtream`
+6. Update manifest and install on production (see below)
+
+### Installing on Production
+After CI completes and the release artifact is available:
+1. Update the manifest branch with new version/checksum
+2. Trigger plugin update on Jellyfin: `curl -X POST -H "Authorization: MediaBrowser Token=2947d3c7305b4564a1808852d097039a" "https://boxer.kristiansen.cf/ScheduledTasks/Running/f9b057c054e9e6daee4a88ffd146a403"`
+3. Restart Jellyfin to load the new DLL (new version forces fresh install due to folder caching)
 
 ## Common Pitfalls
 
