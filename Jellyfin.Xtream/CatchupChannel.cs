@@ -231,7 +231,9 @@ public class CatchupChannel(ILogger<CatchupChannel> logger, IXtreamClient xtream
                     Id = StreamService.ToGuid(StreamService.CatchupStreamPrefix, channel.StreamId, epgId++, day).ToString(),
                     IsLiveStream = false,
                     MediaSources = [
-                        plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: shiftedStart, durationMinutes: durationMinutes)
+                        // Use the original UTC time for the timeshift URL — the Xtream API
+                        // expects server time (UTC), not the display-shifted user time.
+                        plugin.StreamService.GetMediaSourceInfo(StreamType.CatchUp, channelId, start: prog.Start, durationMinutes: durationMinutes)
                     ],
                     MediaType = ChannelMediaType.Video,
                     Name = $"{dateTitle} - {prog.Title}",

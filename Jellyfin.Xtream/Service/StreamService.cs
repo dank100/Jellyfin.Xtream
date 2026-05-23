@@ -422,14 +422,14 @@ public partial class StreamService(IXtreamClient xtreamClient, IServerApplicatio
 
         bool isLive = type == StreamType.Live;
         bool isCatchUp = type == StreamType.CatchUp;
-        return new MediaSourceInfo()
-        {
-            Container = extension ?? (isLive || isCatchUp ? "ts" : null),
-            EncoderProtocol = MediaProtocol.Http,
-            Id = ToGuid(MediaSourcePrefix, (int)type, id, 0).ToString(),
-            IsInfiniteStream = isLive,
-            IsRemote = true,
-            MediaStreams =
+
+        // Only include MediaStreams when we have actual codec info from a probe.
+        // Empty/null codec entries mislead Jellyfin's transcoding engine (e.g. forcing
+        // stereo→5.1 upscale or preventing direct play). When omitted, Jellyfin probes
+        // the source via ffmpeg's analyzeduration and makes correct decisions.
+        bool hasProbeInfo = videoInfo != null || audioInfo != null;
+        List<MediaStream> mediaStreams = hasProbeInfo
+            ?
             [
                 new()
                 {
@@ -461,13 +461,23 @@ public partial class StreamService(IXtreamClient xtreamClient, IServerApplicatio
                     SampleRate = audioInfo?.SampleRate,
                     Type = MediaStreamType.Audio,
                 }
-            ],
+            ]
+            : [];
+
+        return new MediaSourceInfo()
+        {
+            Container = extension ?? (isLive || isCatchUp ? "ts" : null),
+            EncoderProtocol = MediaProtocol.Http,
+            Id = ToGuid(MediaSourcePrefix, (int)type, id, 0).ToString(),
+            IsInfiniteStream = isLive,
+            IsRemote = true,
+            MediaStreams = mediaStreams,
             Name = "default",
             Path = uri,
             Protocol = MediaProtocol.Http,
             RequiresClosing = restream,
             RequiresOpening = restream,
-            AnalyzeDurationMs = isLive ? 500 : null,
+            AnalyzeDurationMs = isLive ? 3000 : (isCatchUp ? 3000 : null),
             SupportsDirectPlay = true,
             SupportsDirectStream = true,
             SupportsProbing = true,

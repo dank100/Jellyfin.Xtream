@@ -1,7 +1,7 @@
 ---
 name: "Jellyfin Xtream"
 guid: "5d774c35-8567-46d3-a950-9bb8227a0c5d"
-version: "0.10.8.0"
+version: "0.10.9.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Stream content from an Xtream-compatible server."
@@ -12,7 +12,8 @@ owner: "Kevinjil"
 artifacts:
   - "Jellyfin.Xtream.dll"
 changelog: >
-  Fix live stream crashes: auto-reconnect when upstream Xtream provider drops
-  the connection (up to 5 retries with backoff). Fix A/V desync by improving
-  MPEG-TS keyframe seeking to use RAI flag and proper PAT/PMT parsing instead
-  of fragile SPS NAL byte scanning. Signal EOF to ffmpeg when stream truly ends.
+  Fix catch-up playback (no video): omit empty MediaStreams so Jellyfin probes
+  the source correctly instead of forcing wrong audio channels (5.1 from stereo).
+  Fix catch-up schedule misalignment: use UTC time for timeshift URL in XMLTV path.
+  Fix iPhone EAC3 detection: increase probe buffer to 4MB and analyzeDuration to
+  3000ms so EAC3 channel layout is properly detected.

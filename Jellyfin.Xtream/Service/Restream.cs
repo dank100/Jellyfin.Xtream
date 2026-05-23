@@ -117,8 +117,9 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
         _copyTask = RunStreamingLoop(_tokenSource.Token);
 
         // Wait for enough data to contain at least one keyframe with SPS/PPS NAL units.
-        const int minBytes = 2 * 1024 * 1024;
-        const int maxWaitMs = 8000;
+        // 4MB ensures EAC3/AC3 audio frames are fully present for channel detection.
+        const int minBytes = 4 * 1024 * 1024;
+        const int maxWaitMs = 10000;
         const int pollMs = 50;
         int waited = 0;
         while (_buffer.TotalBytesWritten < minBytes && waited < maxWaitMs && !openCancellationToken.IsCancellationRequested)
