@@ -50,6 +50,7 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _tokenSource;
+    private readonly TsTimestampRewriter _timestampRewriter;
     private readonly string _url;
 
     private Task? _copyTask;
@@ -69,6 +70,7 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
         MediaSource = mediaSource;
 
         _buffer = new WrappedBufferStream(16 * 1024 * 1024); // 16MiB
+        _timestampRewriter = new TsTimestampRewriter();
         _tokenSource = new CancellationTokenSource();
 
         OriginalStreamId = MediaSource.Id;
@@ -173,7 +175,7 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
             {
                 if (_inputStream != null)
                 {
-                    await _inputStream.CopyToAsync(_buffer, cancellationToken).ConfigureAwait(false);
+                    await CopyWithTimestampRewriteAsync(_inputStream, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -245,6 +247,47 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
         // Signal readers that no more data will arrive
         _buffer.Complete();
         _logger.LogInformation("Restream for channel {ChannelId} streaming loop ended.", MediaSource.Id);
+    }
+
+    /// <summary>
+    /// Reads from the upstream in TS-packet-aligned chunks, rewrites timestamps
+    /// to maintain monotonic continuity across reconnections, then writes to the buffer.
+    /// </summary>
+    private async Task CopyWithTimestampRewriteAsync(Stream source, CancellationToken cancellationToken)
+    {
+        const int tsPacketSize = 188;
+        const int readSize = tsPacketSize * 128; // ~24KB per read
+        byte[] readBuffer = new byte[readSize + tsPacketSize]; // extra space for partial packet carryover
+        int carryover = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            int bytesRead = await source.ReadAsync(
+                readBuffer.AsMemory(carryover, readSize),
+                cancellationToken).ConfigureAwait(false);
+
+            if (bytesRead == 0)
+            {
+                break; // upstream EOF
+            }
+
+            int total = carryover + bytesRead;
+            int aligned = (total / tsPacketSize) * tsPacketSize;
+
+            if (aligned > 0)
+            {
+                // Rewrite timestamps in-place for the aligned portion
+                _timestampRewriter.Rewrite(readBuffer.AsSpan(0, aligned));
+                await _buffer.WriteAsync(readBuffer.AsMemory(0, aligned), cancellationToken).ConfigureAwait(false);
+            }
+
+            // Keep any partial packet for the next iteration
+            carryover = total - aligned;
+            if (carryover > 0)
+            {
+                System.Buffer.BlockCopy(readBuffer, aligned, readBuffer, 0, carryover);
+            }
+        }
     }
 
     /// <inheritdoc />
