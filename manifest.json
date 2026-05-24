@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix live stream freezing after upstream reconnection: integrate TsTimestampRewriter into Restream path to maintain monotonic PTS/DTS across reconnections.",
+        "checksum": "9e7922be5d4cb60766ceb31f30cc08c6",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.10.0/jellyfin-xtream_0.10.10.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-24T17:29:38Z",
+        "version": "0.10.10.0"
+      },
+      {
         "changelog": "Fix catch-up playback (no video), schedule misalignment, and iPhone EAC3 detection.\n\n- Omit empty MediaStreams for catch-up so Jellyfin probes source correctly (fixes stereo→5.1 upscale breaking video)\n- Use UTC time for timeshift URL in XMLTV path (fixes schedule/content offset)\n- Increase probe buffer to 4MB and AnalyzeDurationMs to 3000ms (fixes EAC3 channel detection on HEVC streams)",
         "checksum": "192a92a1cc5acef4c2754aaa91d7ac0c",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.9.0/jellyfin-xtream_0.10.9.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-04T19:41:33Z",
         "version": "0.9.86.0"
-      },
-      {
-        "changelog": "Bypass ffmpeg transcoder for recording channels via MVC action filter redirect to direct HLS endpoint. Removes all JS injection. Forces codec copy for interlaced content.",
-        "checksum": "1029c1049af3d5e90903d7bc8dee3023",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.85.0/jellyfin-xtream_0.9.85.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-04T18:48:18Z",
-        "version": "0.9.85.0"
       }
     ]
   }
