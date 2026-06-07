@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix stream freeze + Android TV no-video issues\n\n**Fixes:**\n- Stream no longer freezes after ~10-15s disconnects (Restream with auto-reconnect)\n- Fixed TsTimestampRewriter B-frame DTS bug: reconnect target now uses max(lastPts, lastDts)+1 — prevents non-monotonic DTS → HLS replay\n- Fixed IsInterlaced incorrectly true for all live TV\n- Fixed SupportsDirectPlay incorrectly true for live TV (caused Android TV audio-only)",
+        "checksum": "2cc467b917da03cdc9c9bed82fb1b97d",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.13.0/jellyfin-xtream_0.10.13.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-06-07T13:55:50Z",
+        "version": "0.10.13.0"
+      },
+      {
         "changelog": "Replace buffered Restream with DirectLiveTuner for live TV\n\nFixes HLS segment replay caused by non-monotonic DTS from TsTimestampRewriter.\n\n- New `DirectLiveTuner`: pipes Xtream HTTP response directly to FFmpeg — no buffer, no timestamp rewriting, no keyframe seeking\n- Recording channels and multiplexed channels unchanged",
         "checksum": "4f3ed4cd22d2dd5825d6ee685c0694bf",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.12.0/jellyfin-xtream_0.10.12.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-07T19:44:21Z",
         "version": "0.9.89.0"
-      },
-      {
-        "changelog": "Fix web seeking (revert PDT tags). Skip redirect for Android TV — let Jellyfin remux for seekbar support.",
-        "checksum": "083955caf542da9584354eae50096083",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.88.0/jellyfin-xtream_0.9.88.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-06T07:17:10Z",
-        "version": "0.9.88.0"
       }
     ]
   }
