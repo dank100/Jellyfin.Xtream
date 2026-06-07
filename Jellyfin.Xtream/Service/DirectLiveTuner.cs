@@ -27,7 +27,7 @@ namespace Jellyfin.Xtream.Service;
 /// A minimal live stream that pipes the Xtream HTTP response directly to Jellyfin's
 /// FFmpeg pipeline without any intermediate buffering or timestamp rewriting.
 /// </summary>
-public class DirectLiveStream : ILiveStream, IDisposable
+public class DirectLiveTuner : ILiveStream, IDisposable
 {
     /// <summary>
     /// The tuner host ID used to identify direct live streams.
@@ -39,11 +39,11 @@ public class DirectLiveStream : ILiveStream, IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="DirectLiveStream"/> class.
+    /// Initializes a new instance of the <see cref="DirectLiveTuner"/> class.
     /// </summary>
     /// <param name="httpClientFactory">Factory for creating HTTP clients.</param>
     /// <param name="mediaSource">The media source containing the direct Xtream URL.</param>
-    public DirectLiveStream(IHttpClientFactory httpClientFactory, MediaSourceInfo mediaSource)
+    public DirectLiveTuner(IHttpClientFactory httpClientFactory, MediaSourceInfo mediaSource)
     {
         _httpClient = httpClientFactory.CreateClient();
         MediaSource = mediaSource;

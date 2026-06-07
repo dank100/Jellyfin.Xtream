@@ -462,7 +462,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         }
 
         MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel);
-        var stream = new DirectLiveStream(httpClientFactory, mediaSourceInfo);
+        var stream = new DirectLiveTuner(httpClientFactory, mediaSourceInfo);
         await stream.Open(cancellationToken).ConfigureAwait(false);
         stream.ConsumerCount++;
         return stream;
