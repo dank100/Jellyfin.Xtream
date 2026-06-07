@@ -27,7 +27,7 @@ namespace Jellyfin.Xtream.Service;
 /// A minimal live stream that pipes the Xtream HTTP response directly to Jellyfin's
 /// FFmpeg pipeline without any intermediate buffering or timestamp rewriting.
 /// </summary>
-public class DirectLiveTuner : ILiveStream, IDisposable
+public sealed class DirectLiveTuner : ILiveStream, IDisposable
 {
     /// <summary>
     /// The tuner host ID used to identify direct live streams.
