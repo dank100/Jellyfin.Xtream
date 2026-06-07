@@ -38,12 +38,19 @@ internal sealed class TsTimestampRewriter
     private readonly Dictionary<int, int> _ccCounters = new();
 
     private long _lastPts = -1;
+    private long _lastDts = -1;
     private long _adjustment;
 
     /// <summary>
     /// Gets the last observed output PTS (after adjustment), or -1 if none seen yet.
     /// </summary>
     public long LastOutputPts => _lastPts;
+
+    /// <summary>
+    /// Gets the last observed output DTS (after adjustment), or -1 if none seen yet.
+    /// DTS can exceed PTS for B-frame streams, so the reconnect target must account for it.
+    /// </summary>
+    public long LastOutputDts => _lastDts;
 
     /// <summary>
     /// Gets the current adjustment offset (in 90kHz ticks).
@@ -68,10 +75,12 @@ internal sealed class TsTimestampRewriter
             long expectedDelta = WrapDiff(firstPts + _adjustment, _lastPts);
             if (expectedDelta < -BackwardThreshold || expectedDelta > ForwardThreshold)
             {
-                // Discontinuity: map new content to _lastPts + 1 so output PTS
-                // remains strictly monotonic without large gaps. Wall-clock based
-                // targets caused PTS jumps that crashed the HLS transcoder/player.
-                long target = _lastPts + 1;
+                // Discontinuity: map new content to continue strictly after the highest
+                // timestamp we have output so far. Use max(lastPts, lastDts) because
+                // B-frame streams have DTS > PTS for some packets — using only _lastPts
+                // as the target causes the new stream's DTS to be non-monotonic.
+                long lastHighWatermark = Math.Max(_lastPts, _lastDts);
+                long target = lastHighWatermark + 1;
                 _adjustment = WrapDiff(target, firstPts);
             }
         }
@@ -93,20 +102,128 @@ internal sealed class TsTimestampRewriter
         // don't detect packet loss and drop data.
         FixContinuityCounters(data);
 
-        // Track the last PTS we output.
-        // Data was already adjusted in-place above, so ReadLastPts returns
-        // the final output PTS — do NOT add _adjustment again.
+        // Track the last PTS and DTS we output.
+        // Data was already adjusted in-place above, so Read* returns the final output values.
         long lastPts = ReadLastPts(data);
         if (lastPts >= 0)
         {
             _lastPts = Wrap(lastPts);
         }
 
+        long lastDts = ReadLastDts(data);
+        if (lastDts >= 0)
+        {
+            _lastDts = Wrap(lastDts);
+        }
+
         return adjusted;
     }
 
     /// <summary>
-    /// Computes the signed difference (a - b) with 33-bit PTS wrap handling.
+    /// Reads the last DTS found in the TS data (after any in-place adjustment).
+    /// Returns the DTS if present in the PES header, otherwise falls back to PTS,
+    /// or -1 if neither is found.
+    /// </summary>
+    internal static long ReadLastDts(ReadOnlySpan<byte> data)
+    {
+        long last = -1;
+        for (int offset = 0; offset + TsPacketSize <= data.Length; offset += TsPacketSize)
+        {
+            long dts = TryReadPesDts(data, offset);
+            if (dts >= 0)
+            {
+                last = dts;
+            }
+        }
+
+        return last;
+    }
+
+    /// <summary>
+    /// Tries to read the DTS from a PES header in one TS packet.
+    /// Falls back to PTS when DTS is not present (non-B-frame packets).
+    /// Returns -1 if neither is found.
+    /// </summary>
+    private static long TryReadPesDts(ReadOnlySpan<byte> data, int packetOffset)
+    {
+        if (data[packetOffset] != SyncByte)
+        {
+            return -1;
+        }
+
+        bool payloadStart = (data[packetOffset + 1] & 0x40) != 0;
+        if (!payloadStart)
+        {
+            return -1;
+        }
+
+        int adaptControl = (data[packetOffset + 3] >> 4) & 0x03;
+        int payloadOffset = packetOffset + 4;
+
+        if ((adaptControl & 0x02) != 0)
+        {
+            int adaptLen = data[payloadOffset];
+            payloadOffset += 1 + adaptLen;
+        }
+
+        if ((adaptControl & 0x01) == 0)
+        {
+            return -1;
+        }
+
+        int end = packetOffset + TsPacketSize;
+        if (payloadOffset + 9 > end)
+        {
+            return -1;
+        }
+
+        if (data[payloadOffset] != 0 || data[payloadOffset + 1] != 0 || data[payloadOffset + 2] != 1)
+        {
+            return -1;
+        }
+
+        byte streamId = data[payloadOffset + 3];
+        if (streamId < 0xBC)
+        {
+            return -1;
+        }
+
+        if (streamId == 0xBC || streamId == 0xBE || streamId == 0xBF ||
+            streamId == 0xF0 || streamId == 0xF1 || streamId == 0xFF ||
+            streamId == 0xF2 || streamId == 0xF8)
+        {
+            return -1;
+        }
+
+        byte flags = data[payloadOffset + 7];
+        bool hasPts = (flags & 0x80) != 0;
+        bool hasDts = (flags & 0x40) != 0;
+
+        if (!hasPts)
+        {
+            return -1;
+        }
+
+        int ptsPos = payloadOffset + 9;
+        if (ptsPos + 5 > end)
+        {
+            return -1;
+        }
+
+        if (hasDts)
+        {
+            int dtsPos = ptsPos + 5;
+            if (dtsPos + 5 <= end)
+            {
+                return DecodePts(data, dtsPos);
+            }
+        }
+
+        // No DTS field — DTS equals PTS for this packet.
+        return DecodePts(data, ptsPos);
+    }
+
+
     /// Positive means a is ahead of b; negative means a is behind.
     /// Exposed for wrap-safe duplicate detection in the pump.
     /// </summary>

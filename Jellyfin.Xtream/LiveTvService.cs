@@ -461,9 +461,15 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             return muxStream;
         }
 
-        MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel);
-        var stream = new DirectLiveTuner(httpClientFactory, mediaSourceInfo);
-        await stream.Open(cancellationToken).ConfigureAwait(false);
+        MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel, restream: true);
+        ILiveStream? stream = currentLiveStreams.Find(stream => stream.TunerHostId == Restream.TunerHost && stream.MediaSource.Id == mediaSourceInfo.Id);
+
+        if (stream == null)
+        {
+            stream = new Restream(appHost, httpClientFactory, logger, mediaSourceInfo);
+            await stream.Open(cancellationToken).ConfigureAwait(false);
+        }
+
         stream.ConsumerCount++;
         return stream;
     }

@@ -619,4 +619,62 @@ public class TsTimestampRewriterTests
         Assert.True(phase2Skipped <= maxConsecutiveSkips + 1,
             $"Phase 2: should skip at most {maxConsecutiveSkips}+1 before reset, got {phase2Skipped}");
     }
+
+    // --- B-frame DTS reconnect ---
+
+    [Fact]
+    public void Reconnect_WithBFrames_DtsRemainsMonotonic()
+    {
+        // Reproduces the bug where TsTimestampRewriter used only _lastPts (not _lastDts)
+        // as the reconnect target. B-frame packets have DTS > PTS, so the last DTS in a
+        // chunk can exceed the last PTS. Using _lastPts + 1 as target set the new stream's
+        // DTS below the previous chunk's last DTS → non-monotonic DTS → FFmpeg froze HLS.
+        //
+        // Stream layout (decode order, as in TS): I P B B P B B
+        // At 50fps each frame = 1800 ticks. B-frames: PTS < DTS.
+
+        const long Frame = 1800; // 1800 ticks per frame at 50fps
+        var rewriter = new TsTimestampRewriter();
+
+        // Segment 1: 7 packets in decode order. Last two are B-frames (PTS < DTS).
+        // PTS values (decode order): 0, 5400, 1800, 3600, 10800, 7200, 9000
+        // DTS values (decode order): 0, 1800, 3600, 5400, 7200, 9000, 10800
+        long[] pts1 = [0 * Frame, 3 * Frame, 1 * Frame, 2 * Frame, 6 * Frame, 4 * Frame, 5 * Frame];
+        long[] dts1 = [0 * Frame, 1 * Frame, 2 * Frame, 3 * Frame, 4 * Frame, 5 * Frame, 6 * Frame];
+
+        using var ms1 = new System.IO.MemoryStream();
+        for (int i = 0; i < pts1.Length; i++)
+        {
+            ms1.Write(TsPacketBuilder.BuildPesPacket(0x100, pts1[i], dts1[i], i & 0x0F));
+        }
+
+        byte[] seg1 = ms1.ToArray();
+        rewriter.Rewrite(seg1);
+
+        long lastPtsAfterSeg1 = rewriter.LastOutputPts;
+        long lastDtsAfterSeg1 = rewriter.LastOutputDts;
+
+        // Sanity: last DTS (6×1800=10800) must exceed last PTS (5×1800=9000).
+        Assert.True(lastDtsAfterSeg1 > lastPtsAfterSeg1,
+            $"lastDts ({lastDtsAfterSeg1}) must be > lastPts ({lastPtsAfterSeg1}) for B-frame stream");
+
+        // Segment 2: source disconnected and reconnected — DTS restarts from 0.
+        long[] pts2 = [0 * Frame, 3 * Frame, 1 * Frame, 2 * Frame];
+        long[] dts2 = [0 * Frame, 1 * Frame, 2 * Frame, 3 * Frame];
+
+        using var ms2 = new System.IO.MemoryStream();
+        for (int i = 0; i < pts2.Length; i++)
+        {
+            ms2.Write(TsPacketBuilder.BuildPesPacket(0x100, pts2[i], dts2[i], i & 0x0F));
+        }
+
+        byte[] seg2 = ms2.ToArray();
+        rewriter.Rewrite(seg2);
+
+        // After reconnect: first DTS in seg2 must be > last DTS in seg1.
+        // This is the key invariant that prevents FFmpeg's "Non-monotonic DTS" warning.
+        long seg2FirstDts = TsTimestampRewriter.ReadLastDts(seg2[..188]); // first packet only
+        Assert.True(seg2FirstDts > lastDtsAfterSeg1,
+            $"seg2 first DTS ({seg2FirstDts}) must be > seg1 last DTS ({lastDtsAfterSeg1}) — otherwise FFmpeg sees non-monotonic DTS");
+    }
 }
