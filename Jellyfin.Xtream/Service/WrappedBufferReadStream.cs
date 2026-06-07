@@ -236,12 +236,14 @@ public class WrappedBufferReadStream : Stream
 
     /// <summary>
     /// Finds the video PID by parsing PAT and PMT from the buffer.
-    /// Returns -1 if not found.
+    /// Returns -1 if not found. Sets <paramref name="codecType"/> to the PMT stream type
+    /// (0x1B for H.264, 0x24 for HEVC, -1 if unknown).
     /// </summary>
-    private static int FindVideoPid(long startPos, long endPos, WrappedBufferStream source)
+    private static int FindVideoPid(long startPos, long endPos, WrappedBufferStream source, out int codecType)
     {
         int pmtPid = -1;
         int videoPid = -1;
+        codecType = -1;
 
         long pos = startPos;
         while (pos + TsPacketSize <= endPos)
@@ -313,6 +315,7 @@ public class WrappedBufferReadStream : Stream
                             if (streamType == 0x1B || streamType == 0x24)
                             {
                                 videoPid = elementaryPid;
+                                codecType = streamType;
                                 return videoPid;
                             }
 
@@ -330,10 +333,10 @@ public class WrappedBufferReadStream : Stream
 
     /// <summary>
     /// Finds a clean MPEG-TS start position for playback by:
-    /// 1. Parsing PAT/PMT to identify the video PID
-    /// 2. Finding a Random Access Indicator on the video PID
-    /// 3. Backing up to include the most recent PAT packet before the keyframe
-    /// Falls back to SPS NAL scanning if RAI is not found.
+    /// 1. Parsing PAT/PMT to identify the video PID and codec type
+    /// 2. Scanning for a PUSI packet whose access unit contains a true IDR/IRAP frame
+    /// 3. Falling back to RAI if IDR scan yields nothing (unknown codecs)
+    /// 4. Backing up to include the most recent PAT packet before the keyframe
     /// </summary>
     private static long FindCleanStartPosition(long startPos, WrappedBufferStream source)
     {
@@ -352,26 +355,26 @@ public class WrappedBufferReadStream : Stream
             return -1;
         }
 
-        // Find video PID from PAT/PMT
-        int videoPid = FindVideoPid(alignedStart, snapshot, source);
+        // Find video PID and codec type from PAT/PMT
+        int videoPid = FindVideoPid(alignedStart, snapshot, source, out int codecType);
 
-        // Find RAI on video PID (or any PID if video PID unknown)
-        long raiPos = FindRaiPosition(alignedStart, snapshot, source, videoPid);
+        // Primary: scan PUSI packets on the video PID for a true IDR/IRAP access unit
+        long keyframePos = FindIdrPosition(alignedStart, snapshot, source, videoPid, codecType);
 
-        if (raiPos < 0)
+        if (keyframePos < 0)
         {
-            // Fallback: scan for SPS NAL unit in payload
-            raiPos = FindSpsPosition(alignedStart, snapshot, source, videoPid);
+            // Fallback: trust the RAI flag (less reliable but handles unknown codecs)
+            keyframePos = FindRaiPosition(alignedStart, snapshot, source, videoPid);
         }
 
-        if (raiPos < 0)
+        if (keyframePos < 0)
         {
             return -1;
         }
 
-        // Back up to include the most recent PAT (PID 0) before the RAI position
-        long patPos = FindLastPatBefore(alignedStart, raiPos, source);
-        return patPos >= 0 ? patPos : raiPos;
+        // Back up to include the most recent PAT (PID 0) before the keyframe
+        long patPos = FindLastPatBefore(alignedStart, keyframePos, source);
+        return patPos >= 0 ? patPos : keyframePos;
     }
 
     /// <summary>
@@ -393,8 +396,182 @@ public class WrappedBufferReadStream : Stream
     }
 
     /// <summary>
-    /// Scans forward for a TS packet with the Random Access Indicator set on the target PID.
-    /// If targetPid is -1, matches RAI on any PID that also has PUSI set.
+    /// Scans for the first PUSI packet on the video PID whose access unit contains a
+    /// true IDR (H.264 NAL type 5) or IRAP (HEVC NAL types 19-21) frame.
+    /// This is more reliable than the RAI flag, which some encoders set on non-IDR I-frames.
+    /// </summary>
+    private static long FindIdrPosition(long startPos, long endPos, WrappedBufferStream source, int videoPid, int codecType)
+    {
+        long pos = startPos;
+        while (pos + TsPacketSize <= endPos)
+        {
+            if (ReadByte(source, pos) != SyncByte)
+            {
+                break;
+            }
+
+            int pid = GetPid(source, pos);
+            if ((videoPid < 0 || pid == videoPid) && HasPayloadUnitStart(source, pos))
+            {
+                if (AccessUnitHasIdr(source, pos, endPos, videoPid, codecType))
+                {
+                    return pos;
+                }
+            }
+
+            pos += TsPacketSize;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Scans the access unit starting at <paramref name="puisPos"/> for an IDR/IRAP NAL unit.
+    /// Reads from the first PUSI packet through all continuation packets until the next PUSI
+    /// on the same PID, up to a safety limit of 32 packets.
+    /// Parses and skips the PES header on the first packet to avoid false positives.
+    /// </summary>
+    private static bool AccessUnitHasIdr(WrappedBufferStream source, long puisPos, long endPos, int videoPid, int codecType)
+    {
+        long firstNalStart = GetNalStartInPuisPacket(source, puisPos);
+
+        long pos = puisPos;
+        const int maxPackets = 32;
+
+        for (int p = 0; p < maxPackets && pos + TsPacketSize <= endPos; p++)
+        {
+            if (ReadByte(source, pos) != SyncByte)
+            {
+                break;
+            }
+
+            int pid = GetPid(source, pos);
+
+            // Stop at the next access unit on the video PID
+            if (p > 0 && (videoPid < 0 ? pid == GetPid(source, puisPos) : pid == videoPid) && HasPayloadUnitStart(source, pos))
+            {
+                break;
+            }
+
+            if (videoPid >= 0 && pid != videoPid)
+            {
+                pos += TsPacketSize;
+                continue;
+            }
+
+            long scanFrom;
+            if (p == 0)
+            {
+                // Use the post-PES-header offset if valid, otherwise fall back to TS payload start
+                if (firstNalStart >= puisPos + 4 && firstNalStart < puisPos + TsPacketSize)
+                {
+                    scanFrom = firstNalStart;
+                }
+                else
+                {
+                    int fb = GetPayloadOffset(source, pos);
+                    scanFrom = pos + (fb >= 0 ? fb : 4);
+                }
+            }
+            else
+            {
+                int payloadOff = GetPayloadOffset(source, pos);
+                scanFrom = pos + (payloadOff >= 0 ? payloadOff : 4);
+            }
+
+            long pktEnd = pos + TsPacketSize;
+            if (scanFrom >= pktEnd)
+            {
+                pos += TsPacketSize;
+                continue;
+            }
+
+            for (long j = scanFrom; j + 3 < pktEnd; j++)
+            {
+                if (ReadByte(source, j) == 0x00 &&
+                    ReadByte(source, j + 1) == 0x00 &&
+                    ReadByte(source, j + 2) == 0x01 &&
+                    IsIdrNal(ReadByte(source, j + 3), codecType))
+                {
+                    return true;
+                }
+            }
+
+            pos += TsPacketSize;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Parses the PES header in the given PUSI packet and returns the virtual position
+    /// where the NAL unit bitstream begins. Returns -1 if the PES header is invalid or
+    /// overflows the packet boundary.
+    /// </summary>
+    private static long GetNalStartInPuisPacket(WrappedBufferStream source, long puisPos)
+    {
+        int payloadOff = GetPayloadOffset(source, puisPos);
+        if (payloadOff < 0)
+        {
+            return -1;
+        }
+
+        long pesStart = puisPos + payloadOff;
+        long pktEnd = puisPos + TsPacketSize;
+
+        // Minimum PES header is 9 bytes: start_code(3) + stream_id(1) + length(2) + flags(2) + hdr_len(1)
+        if (pesStart + 9 > pktEnd)
+        {
+            return -1;
+        }
+
+        // Validate PES start code: 00 00 01
+        if (ReadByte(source, pesStart) != 0x00 ||
+            ReadByte(source, pesStart + 1) != 0x00 ||
+            ReadByte(source, pesStart + 2) != 0x01)
+        {
+            return -1;
+        }
+
+        // Validate stream_id for video (0xE0-0xEF)
+        byte streamId = ReadByte(source, pesStart + 3);
+        if ((streamId & 0xF0) != 0xE0)
+        {
+            return -1;
+        }
+
+        int pesHeaderDataLen = ReadByte(source, pesStart + 8);
+        long nalStart = pesStart + 9 + pesHeaderDataLen;
+
+        return nalStart < pktEnd ? nalStart : -1;
+    }
+
+    /// <summary>
+    /// Returns true if the NAL unit identified by its first byte is an IDR (H.264) or
+    /// IRAP (HEVC) frame that can serve as a clean random-access point.
+    /// </summary>
+    private static bool IsIdrNal(byte nalByte, int codecType)
+    {
+        if (codecType == 0x1B) // H.264
+        {
+            return (nalByte & 0x1F) == 5; // IDR slice (any nal_ref_idc)
+        }
+
+        if (codecType == 0x24) // HEVC: 2-byte NAL header, type in bits 9-15
+        {
+            int hevcType = (nalByte >> 1) & 0x3F;
+            // 19=IDR_W_RADL, 20=IDR_N_LP, 21=CRA_NUT
+            return hevcType >= 19 && hevcType <= 21;
+        }
+
+        // Unknown codec: fall back to H.264 heuristic
+        return (nalByte & 0x1F) == 5;
+    }
+
+    /// <summary>
+    /// Fallback: scans forward for a TS packet with the Random Access Indicator set on
+    /// the target PID. Used for unknown codecs when IDR NAL scanning cannot be applied.
+    /// If targetPid is -1, matches RAI on any non-PSI PID that also has PUSI set.
     /// </summary>
     private static long FindRaiPosition(long startPos, long endPos, WrappedBufferStream source, int targetPid)
     {
@@ -420,57 +597,6 @@ public class WrappedBufferReadStream : Stream
                 {
                     // Heuristic: non-PSI PID with PUSI + RAI is likely video
                     return pos;
-                }
-            }
-
-            pos += TsPacketSize;
-        }
-
-        return -1;
-    }
-
-    /// <summary>
-    /// Fallback: scans TS packet payloads for an H.264 SPS NAL unit (type 7).
-    /// Only scans the actual payload area (after TS header + adaptation field).
-    /// </summary>
-    private static long FindSpsPosition(long startPos, long endPos, WrappedBufferStream source, int targetPid)
-    {
-        long pos = startPos;
-        while (pos + TsPacketSize <= endPos)
-        {
-            if (ReadByte(source, pos) != SyncByte)
-            {
-                break;
-            }
-
-            int pid = GetPid(source, pos);
-            if (targetPid >= 0 && pid != targetPid)
-            {
-                pos += TsPacketSize;
-                continue;
-            }
-
-            int payloadOff = GetPayloadOffset(source, pos);
-            if (payloadOff < 0 || payloadOff >= TsPacketSize - 4)
-            {
-                pos += TsPacketSize;
-                continue;
-            }
-
-            // Scan payload bytes for 3-byte start code + SPS NAL type
-            long payloadStart = pos + payloadOff;
-            long pktEnd = pos + TsPacketSize;
-            for (long j = payloadStart; j + 3 < pktEnd; j++)
-            {
-                if (ReadByte(source, j) == 0x00 &&
-                    ReadByte(source, j + 1) == 0x00 &&
-                    ReadByte(source, j + 2) == 0x01)
-                {
-                    byte nalType = (byte)(ReadByte(source, j + 3) & 0x1F);
-                    if (nalType == 7) // SPS
-                    {
-                        return pos;
-                    }
                 }
             }
 
