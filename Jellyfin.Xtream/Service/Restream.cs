@@ -209,8 +209,13 @@ public class Restream : ILiveStream, IDirectStreamProvider, IDisposable
                     break;
                 }
 
-                int delayMs = baseDelayMs * attempt;
-                await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
+                // Attempt 1 is immediate — Xtream disconnects intentionally every ~15s
+                // and accepts new connections right away. Backoff only for subsequent retries.
+                int delayMs = attempt == 1 ? 0 : baseDelayMs * (attempt - 1);
+                if (delayMs > 0)
+                {
+                    await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
+                }
 
                 try
                 {
