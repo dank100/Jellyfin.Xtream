@@ -15,40 +15,66 @@
 
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common.Net;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.MediaInfo;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Xtream.Service;
 
 /// <summary>
-/// A minimal live stream that pipes the Xtream HTTP response directly to Jellyfin's
-/// FFmpeg pipeline without any intermediate buffering or timestamp rewriting.
+/// A live stream that pipes the Xtream HTTP response directly to Jellyfin's
+/// FFmpeg pipeline, transparently reconnecting whenever the server closes the
+/// connection (Xtream rotates streams every ~15 seconds by design).
+/// No intermediate buffer or timestamp rewriter — FFmpeg sees a continuous byte
+/// stream and handles any minor DTS discontinuities with its built-in clamping.
 /// </summary>
-public sealed class DirectLiveTuner : ILiveStream, IDisposable
+public sealed class DirectLiveTuner : ILiveStream, IDirectStreamProvider, IDisposable
 {
     /// <summary>
     /// The tuner host ID used to identify direct live streams.
     /// </summary>
     public const string TunerHost = "Xtream-Direct";
 
-    private readonly HttpClient _httpClient;
-    private HttpResponseMessage? _response;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger _logger;
+    private readonly string _url;
+    private readonly CancellationTokenSource _disposeCts = new();
+    private ReconnectingStream? _stream;
     private bool _disposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DirectLiveTuner"/> class.
     /// </summary>
+    /// <param name="appHost">Application host for building local endpoint URLs.</param>
     /// <param name="httpClientFactory">Factory for creating HTTP clients.</param>
-    /// <param name="mediaSource">The media source containing the direct Xtream URL.</param>
-    public DirectLiveTuner(IHttpClientFactory httpClientFactory, MediaSourceInfo mediaSource)
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="mediaSource">The media source containing the Xtream stream URL.</param>
+    public DirectLiveTuner(
+        IServerApplicationHost appHost,
+        IHttpClientFactory httpClientFactory,
+        ILogger logger,
+        MediaSourceInfo mediaSource)
     {
-        _httpClient = httpClientFactory.CreateClient();
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
+        _url = mediaSource.Path;
+
         MediaSource = mediaSource;
         UniqueId = Guid.NewGuid().ToString();
         OriginalStreamId = mediaSource.Id;
+
+        // Point Jellyfin's FFmpeg at our local live-stream endpoint.
+        string path = $"/LiveTv/LiveStreamFiles/{UniqueId}/stream.ts";
+        MediaSource.Path = appHost.GetSmartApiUrl(IPAddress.Any) + path;
+        MediaSource.EncoderPath = appHost.GetApiUrlForLocalAccess() + path;
+        MediaSource.Protocol = MediaProtocol.Http;
     }
 
     /// <inheritdoc />
@@ -72,20 +98,19 @@ public sealed class DirectLiveTuner : ILiveStream, IDisposable
     /// <inheritdoc />
     public async Task Open(CancellationToken openCancellationToken)
     {
-        string url = MediaSource.Path;
-        _response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, openCancellationToken).ConfigureAwait(false);
-        _response.EnsureSuccessStatusCode();
+        _stream = new ReconnectingStream(_httpClientFactory, _logger, _url, MediaSource.Id, _disposeCts.Token);
+        await _stream.ConnectAsync(openCancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public Stream GetStream()
     {
-        if (_response == null)
+        if (_stream == null)
         {
             throw new InvalidOperationException("Stream has not been opened.");
         }
 
-        return _response.Content.ReadAsStream();
+        return _stream;
     }
 
     /// <inheritdoc />
@@ -100,11 +125,154 @@ public sealed class DirectLiveTuner : ILiveStream, IDisposable
     {
         if (!_disposed)
         {
-            _response?.Dispose();
-            _httpClient.Dispose();
+            _disposeCts.Cancel();
+            _disposeCts.Dispose();
+            _stream?.Dispose();
             _disposed = true;
         }
 
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// A <see cref="Stream"/> that reads from an Xtream HTTP endpoint and
+    /// reconnects immediately whenever the server closes the connection.
+    /// </summary>
+    private sealed class ReconnectingStream : Stream
+    {
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger _logger;
+        private readonly string _url;
+        private readonly string _channelId;
+        private readonly CancellationToken _disposeToken;
+        private HttpResponseMessage? _response;
+        private Stream? _inner;
+        private bool _disposed;
+
+        public ReconnectingStream(
+            IHttpClientFactory httpClientFactory,
+            ILogger logger,
+            string url,
+            string channelId,
+            CancellationToken disposeToken)
+        {
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
+            _url = url;
+            _channelId = channelId;
+            _disposeToken = disposeToken;
+        }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public async Task ConnectAsync(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    _response = await _httpClientFactory
+                        .CreateClient(NamedClient.Default)
+                        .GetAsync(_url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                        .ConfigureAwait(false);
+                    _response.EnsureSuccessStatusCode();
+                    _inner = await _response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "DirectLiveTuner channel {ChannelId} connect failed, retrying.", _channelId);
+                    await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(_disposeToken, cancellationToken);
+            CancellationToken token = linked.Token;
+
+            while (!token.IsCancellationRequested)
+            {
+                if (_inner != null)
+                {
+                    try
+                    {
+                        int n = await _inner.ReadAsync(buffer, token).ConfigureAwait(false);
+                        if (n > 0)
+                        {
+                            return n;
+                        }
+
+                        _logger.LogDebug("DirectLiveTuner channel {ChannelId} upstream EOF, reconnecting.", _channelId);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "DirectLiveTuner channel {ChannelId} read error, reconnecting.", _channelId);
+                    }
+
+                    await _inner.DisposeAsync().ConfigureAwait(false);
+                    _response?.Dispose();
+                    _inner = null;
+                    _response = null;
+                }
+
+                try
+                {
+                    await ConnectAsync(token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+            => ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !_disposed)
+            {
+                _inner?.Dispose();
+                _response?.Dispose();
+                _disposed = true;
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

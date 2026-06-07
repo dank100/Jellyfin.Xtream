@@ -445,11 +445,11 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         }
 
         MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel, restream: true);
-        ILiveStream? stream = currentLiveStreams.Find(stream => stream.TunerHostId == Restream.TunerHost && stream.MediaSource.Id == mediaSourceInfo.Id);
+        ILiveStream? stream = currentLiveStreams.Find(stream => stream.TunerHostId == DirectLiveTuner.TunerHost && stream.MediaSource.Id == mediaSourceInfo.Id);
 
         if (stream == null)
         {
-            stream = new Restream(appHost, httpClientFactory, logger, mediaSourceInfo);
+            stream = new DirectLiveTuner(appHost, httpClientFactory, logger, mediaSourceInfo);
             await stream.Open(cancellationToken).ConfigureAwait(false);
         }
 
