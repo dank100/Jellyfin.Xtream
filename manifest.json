@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Fix: remove 1s delay on first Restream reconnect attempt\n\nXtream disconnects every ~15s intentionally. The 1s base delay before attempt 1 was extending the reconnect gap unnecessarily (on top of actual TCP/HTTP connect time). Now retries immediately on attempt 1; subsequent retries still use 1s/2s/3s backoff.",
+        "checksum": "ccf3be0665cd9e658d6fe84d201b3c17",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.15.0/jellyfin-xtream_0.10.15.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-06-07T14:20:30Z",
+        "version": "0.10.15.0"
+      },
+      {
         "changelog": "Force Restream path via ISupportsDirectStreamProvider\n\nGetChannelStreamMediaSources/GetChannelStream returning valid data caused\nJellyfin to use the raw Xtream URL directly (bypassing Restream's local\nendpoint and reconnection logic). Revert to NotImplementedException so\nJellyfin always goes through GetChannelStreamWithDirectStreamProvider → Restream.",
         "checksum": "20dd7312c7e8debaf3e2595981576a39",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.14.0/jellyfin-xtream_0.10.14.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-09T16:57:41Z",
         "version": "0.9.91.0"
-      },
-      {
-        "changelog": "## Changes\n\n- **Fix recording playback black screen**: All clients now get redirected to the direct HLS endpoint, bypassing ffmpeg which was crashing with exit code 234 on seek\n- RecordingHlsActionFilter now checks both LiveStreamId and mediaSourceId query params for the recording marker\n- RecordingRestream disables transcoding/direct stream to prevent ffmpeg from processing HLS input",
-        "checksum": "21e1eea682711ba3837f3f8bc120997b",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.90.0/jellyfin-xtream_0.9.90.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-09T15:39:41Z",
-        "version": "0.9.90.0"
       }
     ]
   }
