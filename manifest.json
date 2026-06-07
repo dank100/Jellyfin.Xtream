@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Replace buffered Restream with DirectLiveTuner for live TV\n\nFixes HLS segment replay caused by non-monotonic DTS from TsTimestampRewriter.\n\n- New `DirectLiveTuner`: pipes Xtream HTTP response directly to FFmpeg — no buffer, no timestamp rewriting, no keyframe seeking\n- Recording channels and multiplexed channels unchanged",
+        "checksum": "4f3ed4cd22d2dd5825d6ee685c0694bf",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.12.0/jellyfin-xtream_0.10.12.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-06-07T13:36:13Z",
+        "version": "0.10.12.0"
+      },
+      {
         "changelog": "Fix keyframe seeking: scan for true IDR/IRAP NAL units instead of unreliable RAI flag.\n\nThe F1.TV stream sets the RAI flag on non-IDR (open-GOP) I-frames, causing initial H.264 decode errors at playback start. The SPS fallback also failed since SPS is broadcast periodically mid-GOP.\n\nChanges:\n- Replace RAI + SPS fallback with direct IDR/IRAP NAL unit scan\n- H.264: finds true IDR frames (NAL type 5)\n- HEVC: finds IDR_W_RADL/IDR_N_LP/CRA frames (types 19-21)\n- Parses and validates PES header to skip it before scanning\n- Scans until next PUSI on the same PID (up to 32 packets)\n- RAI kept as fallback for unknown/unsupported codecs",
         "checksum": "0fc7e9751a1cb418875927459699d816",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.11.0/jellyfin-xtream_0.10.11.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-06T07:17:10Z",
         "version": "0.9.88.0"
-      },
-      {
-        "changelog": "Add EXT-X-PROGRAM-DATE-TIME tags for Android TV backward seeking in EVENT playlists. ExoPlayer uses these to determine the full seekable range.",
-        "checksum": "52018c51e470748040dd8ca330fc7d75",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.87.0/jellyfin-xtream_0.9.87.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-06T07:01:51Z",
-        "version": "0.9.87.0"
       }
     ]
   }
