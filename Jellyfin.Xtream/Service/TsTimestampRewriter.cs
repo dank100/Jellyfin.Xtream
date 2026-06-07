@@ -223,7 +223,8 @@ internal sealed class TsTimestampRewriter
         return DecodePts(data, ptsPos);
     }
 
-
+    /// <summary>
+    /// Computes the signed difference (a - b) with 33-bit PTS wrap handling.
     /// Positive means a is ahead of b; negative means a is behind.
     /// Exposed for wrap-safe duplicate detection in the pump.
     /// </summary>
