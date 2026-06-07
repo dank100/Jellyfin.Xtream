@@ -1,0 +1,252 @@
+[
+  {
+    "category": "LiveTV",
+    "description": "Stream Live IPTV, Video On-Demand, and Series from an Xtream-compatible server using this plugin.\n",
+    "guid": "5d774c35-8567-46d3-a950-9bb8227a0c5d",
+    "name": "Jellyfin Xtream",
+    "overview": "Stream content from an Xtream-compatible server.",
+    "owner": "Kevinjil",
+    "versions": [
+      {
+        "changelog": "Fix keyframe seeking: scan for true IDR/IRAP NAL units instead of unreliable RAI flag.\n\nThe F1.TV stream sets the RAI flag on non-IDR (open-GOP) I-frames, causing initial H.264 decode errors at playback start. The SPS fallback also failed since SPS is broadcast periodically mid-GOP.\n\nChanges:\n- Replace RAI + SPS fallback with direct IDR/IRAP NAL unit scan\n- H.264: finds true IDR frames (NAL type 5)\n- HEVC: finds IDR_W_RADL/IDR_N_LP/CRA frames (types 19-21)\n- Parses and validates PES header to skip it before scanning\n- Scans until next PUSI on the same PID (up to 32 packets)\n- RAI kept as fallback for unknown/unsupported codecs",
+        "checksum": "0fc7e9751a1cb418875927459699d816",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.11.0/jellyfin-xtream_0.10.11.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-06-07T05:55:33Z",
+        "version": "0.10.11.0"
+      },
+      {
+        "changelog": "Fix live stream freezing after upstream reconnection: integrate TsTimestampRewriter into Restream path to maintain monotonic PTS/DTS across reconnections.",
+        "checksum": "9e7922be5d4cb60766ceb31f30cc08c6",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.10.0/jellyfin-xtream_0.10.10.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-24T17:29:38Z",
+        "version": "0.10.10.0"
+      },
+      {
+        "changelog": "Fix catch-up playback (no video), schedule misalignment, and iPhone EAC3 detection.\n\n- Omit empty MediaStreams for catch-up so Jellyfin probes source correctly (fixes stereo→5.1 upscale breaking video)\n- Use UTC time for timeshift URL in XMLTV path (fixes schedule/content offset)\n- Increase probe buffer to 4MB and AnalyzeDurationMs to 3000ms (fixes EAC3 channel detection on HEVC streams)",
+        "checksum": "192a92a1cc5acef4c2754aaa91d7ac0c",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.9.0/jellyfin-xtream_0.10.9.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-23T20:48:29Z",
+        "version": "0.10.9.0"
+      },
+      {
+        "changelog": "Fix live stream crashes with auto-reconnect and proper keyframe seeking\n\n- Auto-reconnect when upstream Xtream provider drops connection (5 retries with backoff)\n- Proper MPEG-TS keyframe seeking using RAI flag and PAT/PMT parsing (fixes A/V desync)\n- Signal EOF to ffmpeg when stream truly ends\n- Add claude.md with critical configuration docs",
+        "checksum": "ec9afd6a0f76a75aae7dcf645945adbc",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.8.0/jellyfin-xtream_0.10.8.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-21T17:28:02Z",
+        "version": "0.10.8.0"
+      },
+      {
+        "changelog": "Fix: Correct DLL build for scheduled task. Adds 'Index Xtream Series Episodes' task.",
+        "checksum": "627cadc447c5b021771bb3b2783d6899",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.7.0/jellyfin-xtream_0.10.7.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-19T07:04:59Z",
+        "version": "0.10.7.0"
+      },
+      {
+        "changelog": "Add scheduled task 'Index Xtream Series Episodes' - automatically indexes all series/seasons/episodes daily at 4 AM.",
+        "checksum": "3672ee8dabc11dcc99516d78731a5c56",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.6.0/jellyfin-xtream_0.10.6.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-19T07:00:18Z",
+        "version": "0.10.6.0"
+      },
+      {
+        "changelog": "Fix: Add SeriesName to episodes for faster association",
+        "checksum": "875d0d924948cff28106b26f11eb115a",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.5.0/jellyfin-xtream_0.10.5.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-19T06:14:14Z",
+        "version": "0.10.5.0"
+      },
+      {
+        "changelog": "Flatten Series channel for indexing (same as VOD)",
+        "checksum": "5eda8f66fbb95ad19c7c5903a791afdb",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.4.0/jellyfin-xtream_0.10.4.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-19T05:51:46Z",
+        "version": "0.10.4.0"
+      },
+      {
+        "changelog": "Fix: Retry with backoff for VOD fetching",
+        "checksum": "20814e8077548ec9d5d16fe82c78c63e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.3.0/jellyfin-xtream_0.10.3.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-19T03:38:25Z",
+        "version": "0.10.3.0"
+      },
+      {
+        "changelog": "Fix: Sequential category fetching to avoid 503 from provider",
+        "checksum": "869b9ab0b7a69c3577ff890a20de922e",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.2.0/jellyfin-xtream_0.10.2.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T19:15:49Z",
+        "version": "0.10.2.0"
+      },
+      {
+        "changelog": "Fix: DataVersion cache invalidation now uses plugin assembly version (was incorrectly using Jellyfin's)",
+        "checksum": "90da1ce6ddb088a8e0ff595b6166df8b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.1.0/jellyfin-xtream_0.10.1.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T19:09:29Z",
+        "version": "0.10.1.0"
+      },
+      {
+        "changelog": "Fix: Parallel VOD category fetching",
+        "checksum": "bfcbd791a21bea7c23165fc5fca81cf2",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.0.0/jellyfin-xtream_0.10.0.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T19:03:36Z",
+        "version": "0.10.0.0"
+      },
+      {
+        "changelog": "Flatten VOD channel for immediate indexing (no category folders)",
+        "checksum": "68d078ad81e8d16a1c6a4e53983d3930",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.104.0/jellyfin-xtream_0.9.104.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T18:28:26Z",
+        "version": "0.9.104.0"
+      },
+      {
+        "changelog": "Auto-index VOD and Series channel items via AutoRefreshLevels",
+        "checksum": "343c0fd2c4dd9d76614c578066cfb3e3",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.103.0/jellyfin-xtream_0.9.103.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T18:14:46Z",
+        "version": "0.9.103.0"
+      },
+      {
+        "changelog": "Enable SupportsTranscoding for VOD/Series media sources",
+        "checksum": "02c135d807eeb145d1255876ee6f87d8",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.102.0/jellyfin-xtream_0.9.102.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T18:07:55Z",
+        "version": "0.9.102.0"
+      },
+      {
+        "changelog": "Look up VOD container extension at redirect time for cached URLs",
+        "checksum": "314a71d12d12307bf0f00663b7612cde",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.101.0/jellyfin-xtream_0.9.101.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T18:00:42Z",
+        "version": "0.9.101.0"
+      },
+      {
+        "changelog": "Fix VOD/Series playback: include container extension in stream URLs",
+        "checksum": "32fb4badbfb8c3955bcb0b2b5a681cb3",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.100.0/jellyfin-xtream_0.9.100.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-18T17:50:07Z",
+        "version": "0.9.100.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Proxy VOD/Series streams**: Media source URLs now point to the plugin's own redirect endpoints (`/Xtream/Vod/{id}/stream` and `/Xtream/Series/{id}/stream`). These endpoints redirect (302) to the real provider URL using the current base URL at request time. Cached media sources never go stale when the IPTV provider changes their domain.",
+        "checksum": "9a49a54690c8dcbf55a00609cde7ea8b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.99.0/jellyfin-xtream_0.9.99.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-14T17:56:54Z",
+        "version": "0.9.99.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Remove cached MediaSources from channel items**: VOD and Series channel items no longer include MediaSources in the listing. This forces Jellyfin to call `GetChannelItemMediaInfo` at playback time, ensuring the current base URL is always used even for items already cached in Jellyfin's database.",
+        "checksum": "f879eaaef9d7df4019ff830f0676e50b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.98.0/jellyfin-xtream_0.9.98.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-14T17:45:37Z",
+        "version": "0.9.98.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Fresh URLs at playback time**: VOD and Series channels now implement `IRequiresMediaInfoCallback`, so Jellyfin fetches the stream URL using the current base URL at playback time instead of using cached URLs from when the item was first listed. This fixes playback failures when the IPTV provider changes their domain.\n- No more need to clear channel cache or restart after changing the base URL.",
+        "checksum": "95f74489b0e3cbd3c33e8f8e9c47409c",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.97.0/jellyfin-xtream_0.9.97.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-14T17:22:31Z",
+        "version": "0.9.97.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Year+Series sport detection**: EPG descriptions containing a 4-digit year (2020-2099) near the word 'Series' are now detected as sport seasons. For example, 'the 2026 field of NTT IndyCar Series' extracts season 2026 and marks the programme as sport.\n- Combined with the live-only filter from v0.9.94.0, only sport programmes with 'live' in the title are scheduled for recording.",
+        "checksum": "885caced860d901555e34dccc2dab73f",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.96.0/jellyfin-xtream_0.9.96.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T18:42:59Z",
+        "version": "0.9.96.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Stricter parenthesized episode pattern**: Bare `(15)` no longer matches as an episode number — only the `(8/12)` format (with total count) is recognized. This fixes false series detection for sport programmes like IndyCar Highlights where `(15)` refers to a race round or broadcast time.\n- Includes v0.9.94.0 sport series detection (season-only = sport, only record live titles)",
+        "checksum": "bd126d0a63e1756285c023645144267b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.95.0/jellyfin-xtream_0.9.95.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T11:26:01Z",
+        "version": "0.9.95.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Sport series detection**: Season-only EPG matches (e.g. `Sæson: 26`) are now marked as sport series (`IsSeries=true`, `IsSport=true`). The 'Record Series' button appears in the guide for sport events.\n- **Live-only recording for sport**: The series timer scheduler only creates recording timers for sport programmes whose title contains 'live' — filtering out highlights, replays, and studio shows.\n- Regular TV series (with episode numbers) are unaffected.",
+        "checksum": "b08c59016d1cd6b4771114fb5e9b526c",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.94.0/jellyfin-xtream_0.9.94.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T11:20:23Z",
+        "version": "0.9.94.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Season-only no longer marks as series**: `Sæson: 26` without an episode number is no longer detected as a TV series. Sports events like Liga Portugal use season numbers for the competition year, not TV seasons. An episode number is now required for `IsSeries=true`.\n- Includes all fixes from v0.9.92.0 (word boundary regex, empty playlist fail-fast)",
+        "checksum": "74dc8fbeb58204547ae42e4ef3602081",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.93.0/jellyfin-xtream_0.9.93.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T11:15:33Z",
+        "version": "0.9.93.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Fix false series detection**: Added word boundaries to EPG regex patterns — words like 'model', 'prep' no longer falsely match 'Del', 'Ep' patterns\n- **Fix empty multiplexer playlist**: MultiplexedRestream.Open() now throws an error if no segments are produced within 60s, instead of silently serving an empty playlist that crashes ffmpeg\n- 3 new tests for word boundary edge cases (53 total)",
+        "checksum": "276e91e980106ae17ba2fd320fb7d25f",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.92.0/jellyfin-xtream_0.9.92.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-12T11:08:07Z",
+        "version": "0.9.92.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Fix recording playback black screen**: Serve HLS playlist inline instead of 302 redirect — fixes players that don't follow redirects for m3u8\n- Use absolute segment URLs so players resolve them correctly regardless of request origin\n- Re-enable SupportsTranscoding in RecordingRestream so Jellyfin routes through DynamicHls (where our filter intercepts)\n- Fix live TV interference when recording simultaneously",
+        "checksum": "26dd2d5971818f50a2e34de6ef0fbbdf",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.91.0/jellyfin-xtream_0.9.91.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-09T16:57:41Z",
+        "version": "0.9.91.0"
+      },
+      {
+        "changelog": "## Changes\n\n- **Fix recording playback black screen**: All clients now get redirected to the direct HLS endpoint, bypassing ffmpeg which was crashing with exit code 234 on seek\n- RecordingHlsActionFilter now checks both LiveStreamId and mediaSourceId query params for the recording marker\n- RecordingRestream disables transcoding/direct stream to prevent ffmpeg from processing HLS input",
+        "checksum": "21e1eea682711ba3837f3f8bc120997b",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.90.0/jellyfin-xtream_0.9.90.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-09T15:39:41Z",
+        "version": "0.9.90.0"
+      },
+      {
+        "changelog": "## EPG Series Identification & Recording\n\n- **EPG Series Parser**: Extracts season/episode metadata from programme titles and descriptions using multi-language regex patterns (Danish, Swedish, English, compact S01E10 format)\n- **Reproducible Series IDs**: Generates deterministic SHA256-based SeriesId from normalized show titles, enabling Jellyfin's 'Record Series' functionality\n- **Series Timer Auto-Scheduling**: Polls EPG every 5 minutes to create individual recording timers for series timer subscriptions\n- **RecordNewOnly with High-Water Mark**: Only schedules episodes newer than the highest previously scheduled season+episode\n- **Danish EPG format support**: Handles 'Sæson: N. Episode: N.' with colons and periods",
+        "checksum": "bdb3c010d1faeae5b329f93db66fdc80",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.89.0/Jellyfin.Xtream-v0.9.89.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-07T19:44:21Z",
+        "version": "0.9.89.0"
+      },
+      {
+        "changelog": "Fix web seeking (revert PDT tags). Skip redirect for Android TV — let Jellyfin remux for seekbar support.",
+        "checksum": "083955caf542da9584354eae50096083",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.88.0/jellyfin-xtream_0.9.88.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-06T07:17:10Z",
+        "version": "0.9.88.0"
+      },
+      {
+        "changelog": "Add EXT-X-PROGRAM-DATE-TIME tags for Android TV backward seeking in EVENT playlists. ExoPlayer uses these to determine the full seekable range.",
+        "checksum": "52018c51e470748040dd8ca330fc7d75",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.87.0/jellyfin-xtream_0.9.87.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-05-06T07:01:51Z",
+        "version": "0.9.87.0"
+      }
+    ]
+  }
+]

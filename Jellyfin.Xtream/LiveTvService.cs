@@ -230,16 +230,33 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     }
 
     /// <inheritdoc />
-    public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
+    public Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
     {
-        MediaSourceInfo source = await GetChannelStream(channelId, string.Empty, cancellationToken).ConfigureAwait(false);
-        return [source];
+        Guid guid = Guid.Parse(channelId);
+        StreamService.FromGuid(guid, out int prefix, out int channel, out int _, out int _);
+
+        if (prefix != StreamService.LiveTvPrefix)
+        {
+            throw new ArgumentException("Unsupported channel");
+        }
+
+        Plugin plugin = Plugin.Instance;
+        return Task.FromResult<List<MediaSourceInfo>>([plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel)]);
     }
 
     /// <inheritdoc />
     public Task<MediaSourceInfo> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        Guid guid = Guid.Parse(channelId);
+        StreamService.FromGuid(guid, out int prefix, out int channel, out int _, out int _);
+
+        if (prefix != StreamService.LiveTvPrefix)
+        {
+            throw new ArgumentException("Unsupported channel");
+        }
+
+        Plugin plugin = Plugin.Instance;
+        return Task.FromResult(plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel));
     }
 
     /// <inheritdoc />
@@ -444,15 +461,9 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             return muxStream;
         }
 
-        MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel, restream: true);
-        ILiveStream? stream = currentLiveStreams.Find(stream => stream.TunerHostId == Restream.TunerHost && stream.MediaSource.Id == mediaSourceInfo.Id);
-
-        if (stream == null)
-        {
-            stream = new Restream(appHost, httpClientFactory, logger, mediaSourceInfo);
-            await stream.Open(cancellationToken).ConfigureAwait(false);
-        }
-
+        MediaSourceInfo mediaSourceInfo = plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel);
+        var stream = new DirectLiveStream(httpClientFactory, mediaSourceInfo);
+        await stream.Open(cancellationToken).ConfigureAwait(false);
         stream.ConsumerCount++;
         return stream;
     }
