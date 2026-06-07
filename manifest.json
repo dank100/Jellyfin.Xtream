@@ -8,6 +8,14 @@
     "owner": "Kevinjil",
     "versions": [
       {
+        "changelog": "Force Restream path via ISupportsDirectStreamProvider\n\nGetChannelStreamMediaSources/GetChannelStream returning valid data caused\nJellyfin to use the raw Xtream URL directly (bypassing Restream's local\nendpoint and reconnection logic). Revert to NotImplementedException so\nJellyfin always goes through GetChannelStreamWithDirectStreamProvider → Restream.",
+        "checksum": "20dd7312c7e8debaf3e2595981576a39",
+        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.14.0/jellyfin-xtream_0.10.14.0.zip",
+        "targetAbi": "10.11.0.0",
+        "timestamp": "2026-06-07T14:13:06Z",
+        "version": "0.10.14.0"
+      },
+      {
         "changelog": "Fix stream freeze + Android TV no-video issues\n\n**Fixes:**\n- Stream no longer freezes after ~10-15s disconnects (Restream with auto-reconnect)\n- Fixed TsTimestampRewriter B-frame DTS bug: reconnect target now uses max(lastPts, lastDts)+1 — prevents non-monotonic DTS → HLS replay\n- Fixed IsInterlaced incorrectly true for all live TV\n- Fixed SupportsDirectPlay incorrectly true for live TV (caused Android TV audio-only)",
         "checksum": "2cc467b917da03cdc9c9bed82fb1b97d",
         "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.10.13.0/jellyfin-xtream_0.10.13.0.zip",
@@ -238,14 +246,6 @@
         "targetAbi": "10.11.0.0",
         "timestamp": "2026-05-09T15:39:41Z",
         "version": "0.9.90.0"
-      },
-      {
-        "changelog": "## EPG Series Identification & Recording\n\n- **EPG Series Parser**: Extracts season/episode metadata from programme titles and descriptions using multi-language regex patterns (Danish, Swedish, English, compact S01E10 format)\n- **Reproducible Series IDs**: Generates deterministic SHA256-based SeriesId from normalized show titles, enabling Jellyfin's 'Record Series' functionality\n- **Series Timer Auto-Scheduling**: Polls EPG every 5 minutes to create individual recording timers for series timer subscriptions\n- **RecordNewOnly with High-Water Mark**: Only schedules episodes newer than the highest previously scheduled season+episode\n- **Danish EPG format support**: Handles 'Sæson: N. Episode: N.' with colons and periods",
-        "checksum": "bdb3c010d1faeae5b329f93db66fdc80",
-        "sourceUrl": "https://github.com/dank100/Jellyfin.Xtream/releases/download/v0.9.89.0/Jellyfin.Xtream-v0.9.89.0.zip",
-        "targetAbi": "10.11.0.0",
-        "timestamp": "2026-05-07T19:44:21Z",
-        "version": "0.9.89.0"
       }
     ]
   }
