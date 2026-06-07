@@ -124,6 +124,8 @@ internal sealed class TsTimestampRewriter
     /// Returns the DTS if present in the PES header, otherwise falls back to PTS,
     /// or -1 if neither is found.
     /// </summary>
+    /// <param name="data">Raw MPEG-TS data (multiple 188-byte packets).</param>
+    /// <returns>The last DTS value found, or -1 if no timestamps are present.</returns>
     internal static long ReadLastDts(ReadOnlySpan<byte> data)
     {
         long last = -1;
@@ -144,6 +146,9 @@ internal sealed class TsTimestampRewriter
     /// Falls back to PTS when DTS is not present (non-B-frame packets).
     /// Returns -1 if neither is found.
     /// </summary>
+    /// <param name="data">Raw MPEG-TS data buffer.</param>
+    /// <param name="packetOffset">Byte offset of the start of the 188-byte TS packet within <paramref name="data"/>.</param>
+    /// <returns>The DTS value, the PTS value if no DTS is present, or -1 if no timestamps found.</returns>
     private static long TryReadPesDts(ReadOnlySpan<byte> data, int packetOffset)
     {
         if (data[packetOffset] != SyncByte)
