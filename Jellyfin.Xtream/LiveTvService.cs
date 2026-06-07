@@ -230,33 +230,16 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
     }
 
     /// <inheritdoc />
-    public Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
+    public async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
     {
-        Guid guid = Guid.Parse(channelId);
-        StreamService.FromGuid(guid, out int prefix, out int channel, out int _, out int _);
-
-        if (prefix != StreamService.LiveTvPrefix)
-        {
-            throw new ArgumentException("Unsupported channel");
-        }
-
-        Plugin plugin = Plugin.Instance;
-        return Task.FromResult<List<MediaSourceInfo>>([plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel)]);
+        MediaSourceInfo source = await GetChannelStream(channelId, string.Empty, cancellationToken).ConfigureAwait(false);
+        return [source];
     }
 
     /// <inheritdoc />
     public Task<MediaSourceInfo> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken)
     {
-        Guid guid = Guid.Parse(channelId);
-        StreamService.FromGuid(guid, out int prefix, out int channel, out int _, out int _);
-
-        if (prefix != StreamService.LiveTvPrefix)
-        {
-            throw new ArgumentException("Unsupported channel");
-        }
-
-        Plugin plugin = Plugin.Instance;
-        return Task.FromResult(plugin.StreamService.GetMediaSourceInfo(StreamType.Live, channel));
+        throw new NotImplementedException();
     }
 
     /// <inheritdoc />
