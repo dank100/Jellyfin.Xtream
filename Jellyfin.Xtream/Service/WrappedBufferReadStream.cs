@@ -336,7 +336,7 @@ public class WrappedBufferReadStream : Stream
     /// 1. Parsing PAT/PMT to identify the video PID and codec type
     /// 2. Scanning for a PUSI packet whose access unit contains a true IDR/IRAP frame
     /// 3. Falling back to RAI if IDR scan yields nothing (unknown codecs)
-    /// 4. Backing up to include the most recent PAT packet before the keyframe
+    /// 4. Backing up to include the most recent PAT packet before the keyframe.
     /// </summary>
     private static long FindCleanStartPosition(long startPos, WrappedBufferStream source)
     {
