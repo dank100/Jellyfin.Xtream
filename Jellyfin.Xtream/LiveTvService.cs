@@ -58,6 +58,9 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
 
     private readonly Dictionary<string, string> _recordingChannelMap = new();
 
+    // Maps streamId → cleaned channel name; populated by GetChannelsAsync for PPV EPG fallback.
+    private readonly Dictionary<int, string> _channelNameCache = new();
+
     // Lazy to break circular dependency (RecordingEngine → LiveTvService → RecordingEngine)
     private RecordingEngine? _recordingEngine;
     private ConnectionMultiplexer? _connectionMultiplexer;
@@ -110,6 +113,7 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
         foreach (StreamInfo channel in await plugin.StreamService.GetLiveStreamsWithOverrides(cancellationToken).ConfigureAwait(false))
         {
             ParsedName parsed = StreamService.ParseName(channel.Name);
+            _channelNameCache[channel.StreamId] = parsed.Title;
             items.Add(new ChannelInfo()
             {
                 Id = StreamService.ToGuid(StreamService.LiveTvPrefix, channel.StreamId, 0, 0).ToString(),
@@ -381,6 +385,30 @@ public class LiveTvService(IServerApplicationHost appHost, IHttpClientFactory ht
             }
 
             memoryCache.Set(key, items, DateTimeOffset.Now.AddMinutes(10));
+
+            // If the Xtream/XMLTV sources returned no EPG for this channel, try to synthesise
+            // a programme from a time token embedded in the channel name (e.g. "UFC 300 22:00-01:00").
+            if (items.Count == 0 && _channelNameCache.TryGetValue(streamId, out string? channelName))
+            {
+                var ppv = PpvEpgParser.TryParse(channelName, myTz);
+                if (ppv != null)
+                {
+                    items.Add(new ProgramInfo
+                    {
+                        Id = StreamService.ToGuid(StreamService.EpgPrefix, streamId, 0, 1).ToString(),
+                        ChannelId = channelId,
+                        StartDate = ppv.Start,
+                        EndDate = ppv.End,
+                        Name = ppv.CleanTitle,
+                    });
+                    logger.LogDebug(
+                        "Synthesised PPV EPG for stream {StreamId}: '{Title}' {Start}–{End} UTC",
+                        streamId,
+                        ppv.CleanTitle,
+                        ppv.Start,
+                        ppv.End);
+                }
+            }
         }
 
         return from epg in items
